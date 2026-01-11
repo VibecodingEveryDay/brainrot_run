@@ -61,16 +61,19 @@ public class InteractableObject : MonoBehaviour
     
     [Header("Оптимизация производительности")]
     [Tooltip("Частота обновления позиции UI (в кадрах). Больше значение = меньше обновлений")]
-    [SerializeField] private int uiUpdateFrequency = 1; // Обновлять каждый кадр по умолчанию
+    [SerializeField] private int uiUpdateFrequency = 3; // Обновлять каждые 3 кадра по умолчанию (оптимизация)
     
     [Tooltip("Частота проверки расстояния до игрока (в кадрах). Больше значение = меньше проверок")]
-    [SerializeField] private int distanceCheckFrequency = 1; // Проверять каждый кадр по умолчанию
+    [SerializeField] private int distanceCheckFrequency = 2; // Проверять каждые 2 кадра по умолчанию (оптимизация)
     
     [Tooltip("Частота поиска игрока если он не найден (в секундах). Больше значение = меньше поисков")]
     [SerializeField] private float playerSearchInterval = 1f; // Искать раз в секунду
     
+    [Tooltip("Частота обновления Billboard UI (в кадрах). Больше значение = меньше обновлений")]
+    [SerializeField] private int billboardUpdateFrequency = 2; // Обновлять каждые 2 кадра (оптимизация)
+    
     // Приватные переменные
-    private Transform playerTransform;
+    protected Transform playerTransform; // protected для доступа из наследников
     private bool playerNotFoundWarningShown = false;
     private GameObject currentUIInstance;
     private Image progressRingImage;
@@ -78,7 +81,7 @@ public class InteractableObject : MonoBehaviour
     private Canvas uiCanvas;
     private BillboardUI billboardComponent;
     
-    private bool isPlayerInRange = false;
+    protected bool isPlayerInRange = false; // protected для доступа из наследников
     private float currentHoldTime = 0f;
     private bool isHoldingKey = false;
     private bool interactionCompleted = false;
@@ -97,11 +100,14 @@ public class InteractableObject : MonoBehaviour
     // Переменные для оптимизации
     private int frameCount = 0; // Счетчик кадров для оптимизации обновлений
     private int distanceCheckFrameCount = 0; // Счетчик кадров для проверки расстояния
+    private int billboardFrameCount = 0; // Счетчик кадров для обновления Billboard
     private Vector3 lastUIPosition; // Последняя позиция UI для проверки изменений
     private float lastPlayerSearchTime = 0f; // Время последнего поиска игрока
     private float interactionRangeSqr; // Квадрат радиуса взаимодействия (для оптимизации)
     private Color cachedProgressColor; // Кэшированный цвет прогресса
     private bool progressColorNeedsUpdate = false; // Флаг необходимости обновления цвета
+    private bool wasHoldingKeyLastFrame = false; // Флаг для отслеживания изменения состояния клавиши
+    private float lastProgressFillAmount = -1f; // Последнее значение fillAmount для оптимизации обновления
     
     private void Awake()
     {
@@ -273,8 +279,8 @@ public class InteractableObject : MonoBehaviour
             }
         }
         
-        // Обновляем UI (только если UI существует)
-        if (currentUIInstance != null)
+        // Обновляем UI (только если UI существует и активен)
+        if (currentUIInstance != null && currentUIInstance.activeSelf)
         {
             UpdateUI();
         }
@@ -286,9 +292,15 @@ public class InteractableObject : MonoBehaviour
     private void LateUpdate()
     {
         // Обновляем поворот UI к камере в LateUpdate (после всех обновлений камеры)
-        if (billboardComponent != null)
+        // Оптимизация: обновляем не каждый кадр, а с заданной частотой
+        if (billboardComponent != null && currentUIInstance != null && currentUIInstance.activeSelf)
         {
-            billboardComponent.UpdateRotation();
+            billboardFrameCount++;
+            if (billboardFrameCount >= billboardUpdateFrequency)
+            {
+                billboardFrameCount = 0;
+                billboardComponent.UpdateRotation();
+            }
         }
     }
     
@@ -1075,7 +1087,8 @@ public class InteractableObject : MonoBehaviour
     /// </summary>
     private void UpdateUI()
     {
-        if (currentUIInstance == null || progressRingImage == null) return;
+        // Оптимизация: проверяем активность UI перед обновлением
+        if (currentUIInstance == null || !currentUIInstance.activeSelf || progressRingImage == null) return;
         
         // Оптимизация: обновляем позицию UI не каждый кадр, а с заданной частотой
         frameCount++;
@@ -1115,26 +1128,32 @@ public class InteractableObject : MonoBehaviour
         bool shouldShowProgress = isHoldingKey && isPlayerInRange;
         bool shouldHideProgress = !isHoldingKey && currentHoldTime == 0f;
         
-        if (shouldShowProgress)
+        // Обновляем видимость только при изменении состояния удержания клавиши
+        if (wasHoldingKeyLastFrame != isHoldingKey)
         {
-            // Делаем кольцо видимым (проверяем текущий цвет перед обновлением)
-            Color currentColor = progressRingImage.color;
-            if (currentColor.a < 0.99f)
+            wasHoldingKeyLastFrame = isHoldingKey;
+            
+            if (shouldShowProgress)
             {
-                currentColor.a = 1f;
-                progressRingImage.color = currentColor;
-                cachedProgressColor = currentColor;
+                // Делаем кольцо видимым (проверяем текущий цвет перед обновлением)
+                Color currentColor = progressRingImage.color;
+                if (currentColor.a < 0.99f)
+                {
+                    currentColor.a = 1f;
+                    progressRingImage.color = currentColor;
+                    cachedProgressColor = currentColor;
+                }
             }
-        }
-        else if (shouldHideProgress)
-        {
-            // Скрываем кольцо, если не удерживаем клавишу (проверяем текущий цвет перед обновлением)
-            Color currentColor = progressRingImage.color;
-            if (currentColor.a > 0.01f)
+            else if (shouldHideProgress)
             {
-                currentColor.a = 0f;
-                progressRingImage.color = currentColor;
-                cachedProgressColor = currentColor;
+                // Скрываем кольцо, если не удерживаем клавишу (проверяем текущий цвет перед обновлением)
+                Color currentColor = progressRingImage.color;
+                if (currentColor.a > 0.01f)
+                {
+                    currentColor.a = 0f;
+                    progressRingImage.color = currentColor;
+                    cachedProgressColor = currentColor;
+                }
             }
         }
     }
@@ -1142,7 +1161,7 @@ public class InteractableObject : MonoBehaviour
     /// <summary>
     /// Обрабатывает ввод от игрока
     /// </summary>
-    private void HandleInput()
+    protected virtual void HandleInput()
     {
         // Если игрок не в радиусе, но клавиша все еще зажата, сбрасываем состояние
         if (!isPlayerInRange)
@@ -1205,11 +1224,16 @@ public class InteractableObject : MonoBehaviour
             // Ограничиваем время удержания
             currentHoldTime = Mathf.Clamp(currentHoldTime, 0f, interactionTime);
             
-            // Обновляем заполнение кольца прогресса
+            // Обновляем заполнение кольца прогресса (оптимизация: обновляем только при изменении)
             if (progressRingImage != null)
             {
                 float fillAmount = currentHoldTime / interactionTime;
-                progressRingImage.fillAmount = fillAmount;
+                // Обновляем только если значение изменилось значительно (оптимизация)
+                if (Mathf.Abs(fillAmount - lastProgressFillAmount) > 0.01f)
+                {
+                    progressRingImage.fillAmount = fillAmount;
+                    lastProgressFillAmount = fillAmount;
+                }
             }
             
             // Проверяем, завершено ли взаимодействие
@@ -1276,6 +1300,8 @@ public class InteractableObject : MonoBehaviour
     {
         isHoldingKey = false;
         currentHoldTime = 0f;
+        wasHoldingKeyLastFrame = false;
+        lastProgressFillAmount = -1f;
         
         if (progressRingImage != null)
         {

@@ -21,15 +21,21 @@ public class PlayerCarryController : MonoBehaviour
     private ThirdPersonController playerController;
     private Transform playerTransform;
     
+    // Кэшированные значения для оптимизации
+    private Vector3 cachedOffsets = Vector3.zero;
+    private float cachedRotationY = 0f;
+    private bool offsetsCached = false;
+    
     private void Awake()
     {
         playerController = GetComponent<ThirdPersonController>();
         playerTransform = transform;
     }
     
-    private void Update()
+    private void LateUpdate()
     {
-        // Обновляем позицию объекта если он взят
+        // Используем LateUpdate для обновления позиции после всех других обновлений
+        // Это предотвращает конфликты с другими скриптами и обеспечивает плавное движение
         if (currentCarriedObject != null)
         {
             UpdateCarriedObjectPosition();
@@ -43,42 +49,54 @@ public class PlayerCarryController : MonoBehaviour
     {
         if (currentCarriedObject == null || playerTransform == null) return;
         
-        // Получаем смещения из объекта (если заданы) или используем значения по умолчанию
-        float offsetX = currentCarriedObject.GetCarryOffsetX();
-        float offsetY = currentCarriedObject.GetCarryOffsetY();
-        float offsetZ = currentCarriedObject.GetCarryOffsetZ();
-        
-        // Если смещения не заданы в объекте (равны 0), используем значения из контроллера
-        // Проверяем каждую ось отдельно
-        if (Mathf.Approximately(offsetX, 0f))
+        // Оптимизация: кэшируем смещения при взятии объекта, обновляем только если нужно
+        if (!offsetsCached)
         {
-            offsetX = holdPointOffset.x;
-        }
-        
-        if (Mathf.Approximately(offsetY, 0f))
-        {
-            offsetY = holdPointOffset.y;
-        }
-        
-        if (Mathf.Approximately(offsetZ, 0f))
-        {
-            offsetZ = holdPointOffset.z;
+            // Получаем смещения из объекта (если заданы) или используем значения по умолчанию
+            float offsetX = currentCarriedObject.GetCarryOffsetX();
+            float offsetY = currentCarriedObject.GetCarryOffsetY();
+            float offsetZ = currentCarriedObject.GetCarryOffsetZ();
+            
+            // Если смещения не заданы в объекте (равны 0), используем значения из контроллера
+            // Проверяем каждую ось отдельно
+            if (Mathf.Approximately(offsetX, 0f))
+            {
+                offsetX = holdPointOffset.x;
+            }
+            
+            if (Mathf.Approximately(offsetY, 0f))
+            {
+                offsetY = holdPointOffset.y;
+            }
+            
+            if (Mathf.Approximately(offsetZ, 0f))
+            {
+                offsetZ = holdPointOffset.z;
+            }
+            
+            cachedOffsets = new Vector3(offsetX, offsetY, offsetZ);
+            cachedRotationY = currentCarriedObject.GetCarryRotationY();
+            offsetsCached = true;
         }
         
         // Вычисляем целевую позицию относительно игрока
-        // Используем смещения из объекта или базовые значения из контроллера
+        // Используем кэшированные смещения
         Vector3 targetPosition = playerTransform.position + 
-                                playerTransform.forward * offsetZ +
-                                playerTransform.up * offsetY +
-                                playerTransform.right * offsetX;
+                                playerTransform.forward * cachedOffsets.z +
+                                playerTransform.up * cachedOffsets.y +
+                                playerTransform.right * cachedOffsets.x;
         
         // Плавно перемещаем объект к целевой позиции
+        // Используем более плавную интерполяцию для предотвращения дёргания
         if (followSpeed > 0f)
         {
-            currentCarriedObject.transform.position = Vector3.Lerp(
+            // Используем MoveTowards для более предсказуемого движения
+            // Увеличена скорость в 100 раз для быстрого следования
+            float maxDistanceDelta = followSpeed * Time.deltaTime * 100f;
+            currentCarriedObject.transform.position = Vector3.MoveTowards(
                 currentCarriedObject.transform.position,
                 targetPosition,
-                followSpeed * Time.deltaTime
+                maxDistanceDelta
             );
         }
         else
@@ -90,10 +108,7 @@ public class PlayerCarryController : MonoBehaviour
         // Поворачиваем объект
         if (rotateWithPlayer)
         {
-            // Получаем поворот по Y из объекта
-            float rotationY = currentCarriedObject.GetCarryRotationY();
-            
-            if (Mathf.Approximately(rotationY, 0f))
+            if (Mathf.Approximately(cachedRotationY, 0f))
             {
                 // Если поворот не задан, используем поворот игрока
                 currentCarriedObject.transform.rotation = playerTransform.rotation;
@@ -102,7 +117,7 @@ public class PlayerCarryController : MonoBehaviour
             {
                 // Применяем поворот игрока + дополнительный поворот по Y из объекта
                 Quaternion baseRotation = playerTransform.rotation;
-                Quaternion additionalRotation = Quaternion.Euler(0f, rotationY, 0f);
+                Quaternion additionalRotation = Quaternion.Euler(0f, cachedRotationY, 0f);
                 currentCarriedObject.transform.rotation = baseRotation * additionalRotation;
             }
         }
@@ -127,6 +142,15 @@ public class PlayerCarryController : MonoBehaviour
         
         currentCarriedObject = obj;
         
+        // Сбрасываем кэш смещений для нового объекта
+        offsetsCached = false;
+        
+        // Устанавливаем параметр IsTaking в аниматоре
+        if (playerController != null)
+        {
+            playerController.SetIsTaking(true);
+        }
+        
         // Устанавливаем родителя объекта (опционально, для организации иерархии)
         // obj.transform.SetParent(playerTransform);
         
@@ -145,6 +169,15 @@ public class PlayerCarryController : MonoBehaviour
         
         BrainrotObject droppedObject = currentCarriedObject;
         currentCarriedObject = null;
+        
+        // Сбрасываем кэш смещений
+        offsetsCached = false;
+        
+        // Сбрасываем параметр IsTaking в аниматоре
+        if (playerController != null)
+        {
+            playerController.SetIsTaking(false);
+        }
         
         // Убираем родителя объекта (если был установлен)
         // droppedObject.transform.SetParent(null);

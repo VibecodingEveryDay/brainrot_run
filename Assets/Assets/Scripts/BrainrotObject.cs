@@ -50,6 +50,9 @@ public class BrainrotObject : InteractableObject
     private Collider[] cachedColliders;
     private bool componentsCached = false;
     
+    // Оптимизация: флаг для отслеживания состояния UI
+    private bool uiHiddenByCarry = false;
+    
     private void Awake()
     {
         // Находим PlayerCarryController
@@ -87,18 +90,35 @@ public class BrainrotObject : InteractableObject
     
     protected override void Update()
     {
-        // Вызываем базовый Update для обработки взаимодействия и UI
-        base.Update();
-        
-        // Если объект взят, скрываем UI подсказку
-        // Но только если UI существует и виден (оптимизация - проверяем только если объект взят)
+        // Если объект взят, все равно нужно обрабатывать ввод для возможности положить объект
         if (isCarried)
         {
-            if (HasUI())
+            // Скрываем UI один раз при взятии объекта
+            if (!uiHiddenByCarry && HasUI())
             {
                 HideUI();
+                uiHiddenByCarry = true;
             }
+            
+            // ВАЖНО: Обрабатываем ввод даже когда объект взят, чтобы можно было его положить
+            // Но пропускаем обновление UI и проверку расстояния для оптимизации
+            if (playerTransform != null)
+            {
+                // Устанавливаем isPlayerInRange = true чтобы HandleInput работал
+                // Это нужно для обработки взаимодействия при переносе
+                bool wasInRange = isPlayerInRange;
+                isPlayerInRange = true;
+                HandleInput();
+                isPlayerInRange = wasInRange; // Восстанавливаем значение
+            }
+            return;
         }
+        
+        // Сбрасываем флаг когда объект не взят
+        uiHiddenByCarry = false;
+        
+        // Вызываем базовый Update для обработки взаимодействия и UI
+        base.Update();
     }
     
     
@@ -206,6 +226,7 @@ public class BrainrotObject : InteractableObject
         
         // Скрываем UI подсказку когда объект взят
         HideUI();
+        uiHiddenByCarry = true;
         
         // Вызываем событие
         onTake.Invoke();
@@ -287,6 +308,7 @@ public class BrainrotObject : InteractableObject
         
         // Сбрасываем состояние взаимодействия, чтобы UI мог появиться снова при следующем приближении
         ResetInteraction();
+        uiHiddenByCarry = false; // Сбрасываем флаг для повторного показа UI
         
         // Вызываем событие
         onPut.Invoke();

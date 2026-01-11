@@ -37,6 +37,7 @@ public class ThirdPersonController : MonoBehaviour
     // Параметры аниматора
     private static readonly int SpeedHash = Animator.StringToHash("Speed");
     private static readonly int IsGroundedHash = Animator.StringToHash("isGrounded");
+    private static readonly int IsTakingHash = Animator.StringToHash("IsTaking");
     
     private void Awake()
     {
@@ -290,6 +291,17 @@ public class ThirdPersonController : MonoBehaviour
             
             // Обновляем параметр isGrounded
             animator.SetBool(IsGroundedHash, isGrounded);
+        }
+    }
+    
+    /// <summary>
+    /// Установить параметр IsTaking в аниматоре
+    /// </summary>
+    public void SetIsTaking(bool value)
+    {
+        if (animator != null)
+        {
+            animator.SetBool(IsTakingHash, value);
         }
     }
     
