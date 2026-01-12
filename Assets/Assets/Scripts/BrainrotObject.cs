@@ -178,18 +178,28 @@ public class BrainrotObject : InteractableObject
         // Обновляем видимость префаба с данными
         UpdateInfoPrefabVisibility();
         
-        // Если объект размещён, скрываем UI взаимодействия
+        // Если объект размещён, проверяем, размещён ли он на панели
         if (isPlaced)
         {
-            if (HasUI())
+            // Если объект размещён на панели, не показываем UI (взаимодействие только через панель)
+            if (PlacementPanel.IsBrainrotPlacedOnPanel(this))
             {
-                HideUI();
+                // Объект размещён на панели - скрываем UI и не вызываем base.Update()
+                if (HasUI())
+                {
+                    HideUI();
+                }
+                return;
             }
-            // Не вызываем base.Update() когда объект размещён - UI не нужен
+            
+            // Объект размещён на земле - вызываем базовый Update для показа UI
+            base.Update();
             return;
         }
         
-        // Если объект взят, все равно нужно обрабатывать ввод для возможности положить объект
+        // Если объект взят, обрабатываем ввод для возможности положить объект
+        // Размещение на панели происходит через interaction с PlacementPanel
+        // Размещение на земле происходит через interaction с самим объектом (когда нет активной панели)
         if (isCarried)
         {
             // Скрываем UI один раз при взятии объекта
@@ -199,12 +209,11 @@ public class BrainrotObject : InteractableObject
                 uiHiddenByCarry = true;
             }
             
-            // ВАЖНО: Обрабатываем ввод даже когда объект взят, чтобы можно было его положить
+            // Обрабатываем ввод для возможности положить объект на землю (если нет активной панели)
             // Но пропускаем обновление UI и проверку расстояния для оптимизации
             if (playerTransform != null)
             {
                 // Устанавливаем isPlayerInRange = true чтобы HandleInput работал
-                // Это нужно для обработки взаимодействия при переносе
                 bool wasInRange = isPlayerInRange;
                 isPlayerInRange = true;
                 HandleInput();
@@ -239,11 +248,22 @@ public class BrainrotObject : InteractableObject
     {
         if (isCarried)
         {
-            // Если объект уже взят, кладем его
-            Put();
-            // После Put НЕ вызываем base.CompleteInteraction() - это установит interactionCompleted = true
-            // Вместо этого просто сбрасываем состояние, чтобы UI мог появиться снова
-            // UI уже скрыт в методе Put() через ResetInteraction()
+            // Если объект уже взят, проверяем, есть ли активная панель
+            PlacementPanel activePanel = PlacementPanel.GetActivePanel();
+            if (activePanel != null)
+            {
+                // Если есть активная панель, не размещаем на земле
+                // Размещение должно происходить только через interaction с PlacementPanel
+                ResetInteraction();
+            }
+            else
+            {
+                // Если нет активной панели, размещаем на земле
+                Put();
+                // После Put НЕ вызываем base.CompleteInteraction() - это установит interactionCompleted = true
+                // Вместо этого просто сбрасываем состояние, чтобы UI мог появиться снова
+                // UI уже скрыт в методе Put() через ResetInteraction()
+            }
         }
         else
         {
@@ -338,16 +358,8 @@ public class BrainrotObject : InteractableObject
     /// </summary>
     public void Put()
     {
-        // Проверяем, есть ли активная панель размещения
-        PlacementPanel activePanel = PlacementPanel.GetActivePanel();
-        if (activePanel != null)
-        {
-            // Если есть активная панель, размещаем объект на ней
-            activePanel.PlaceOnPanel(this);
-            return;
-        }
-        
-        // Иначе выполняем стандартное размещение на землю
+        // Размещение на панели происходит только через interaction с PlacementPanel
+        // Здесь всегда размещаем на землю
         PutOnGround();
     }
     

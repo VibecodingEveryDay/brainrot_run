@@ -159,11 +159,15 @@ public class PlacementPanel : InteractableObject
             hasBrainrotInHands = playerCarryController.GetCurrentCarriedObject() != null;
         }
         
+        // Всегда вызываем base.Update() для проверки расстояния до игрока
+        // Это нужно, чтобы isPlayerInRange обновлялся корректно
+        base.Update();
+        
         // Показываем UI если:
         // 1. Эта панель является ближайшей к игроку
-        // 2. Есть размещённый brainrot на панели (чтобы можно было взять обратно)
-        // 3. У игрока в руках есть brainrot (чтобы можно было разместить)
-        bool shouldShowUI = isClosestPanel && (placedBrainrot != null || hasBrainrotInHands);
+        // 2. Игрок в радиусе взаимодействия
+        // 3. Есть размещённый brainrot на панели (чтобы можно было взять обратно) ИЛИ у игрока в руках есть brainrot (чтобы можно было разместить)
+        bool shouldShowUI = isClosestPanel && isPlayerInRange && (placedBrainrot != null || hasBrainrotInHands);
         
         // Если эта панель не ближайшая, принудительно отключаем взаимодействие
         if (!isClosestPanel)
@@ -181,9 +185,16 @@ public class PlacementPanel : InteractableObject
             {
                 HideUI();
             }
+            
+            // Если эта панель была активной, снимаем регистрацию (игрок не в зоне этой панели)
+            if (activePanel == this)
+            {
+                activePanel = null;
+            }
             return;
         }
         
+        // Управляем видимостью UI в зависимости от условий
         if (!shouldShowUI)
         {
             // Нет ни размещённого brainrot, ни brainrot в руках - скрываем UI
@@ -191,14 +202,20 @@ public class PlacementPanel : InteractableObject
             {
                 HideUI();
             }
-            // Не вызываем base.Update() если не нужно показывать UI
-            return;
+        }
+        else
+        {
+            // Условия выполнены - убеждаемся, что UI показан (base.Update() уже вызван, он создаст UI если нужно)
+            // Дополнительно проверяем, что UI создан и показан
+            if (!HasUI() && isPlayerInRange)
+            {
+                // Если UI не создан, но игрок в радиусе, создаём его
+                // base.Update() должен был создать UI, но на всякий случай проверяем
+            }
         }
         
-        // Нужно показать UI - вызываем базовый Update
-        base.Update();
-        
         // Регистрируем/снимаем регистрацию панели в зависимости от того, находится ли игрок в зоне
+        // (только для ближайшей панели)
         if (isPlayerInRange)
         {
             // Игрок в зоне - регистрируем эту панель как активную
@@ -657,6 +674,28 @@ public class PlacementPanel : InteractableObject
     public void SetPanelID(int id)
     {
         panelID = id;
+    }
+    
+    /// <summary>
+    /// Проверяет, размещён ли указанный brainrot на какой-либо панели
+    /// </summary>
+    public static bool IsBrainrotPlacedOnPanel(BrainrotObject brainrot)
+    {
+        if (brainrot == null || !brainrot.IsPlaced() || brainrot.IsCarried())
+        {
+            return false;
+        }
+        
+        // Проходим по всем панелям и проверяем, размещён ли brainrot на какой-либо из них
+        foreach (PlacementPanel panel in allPanels)
+        {
+            if (panel != null && panel.placedBrainrot == brainrot)
+            {
+                return true;
+            }
+        }
+        
+        return false;
     }
     
     /// <summary>
