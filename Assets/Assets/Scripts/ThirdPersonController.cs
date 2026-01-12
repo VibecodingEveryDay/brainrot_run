@@ -23,6 +23,10 @@ public class ThirdPersonController : MonoBehaviour
     [Header("Jump Rotation")]
     [SerializeField] private float jumpRotationAngle = 10f; // Угол поворота модели при прыжке
     
+    [Header("Jump Animation Threshold")]
+    [SerializeField] private float minJumpVelocity = 2.0f; // Минимальная вертикальная скорость для запуска анимации прыжка
+    [SerializeField] private float minJumpYDelta = 0.25f; // Минимальное изменение Y для запуска анимации прыжка
+    
     private CharacterController characterController;
     private Vector3 velocity;
     private bool isGrounded;
@@ -30,6 +34,8 @@ public class ThirdPersonController : MonoBehaviour
     private bool jumpRequested = false; // Запрос на прыжок от кнопки
     private bool isJumping = false; // Флаг прыжка для поворота модели
     private Quaternion savedModelRotation; // Сохраненный поворот модели перед прыжком
+    private float previousYPosition; // Предыдущая Y позиция для отслеживания изменения
+    private bool wasJumpingLastFrame = false; // Флаг прыжка в предыдущем кадре
     
     // Ввод от джойстика (для мобильных устройств)
     private Vector2 joystickInput = Vector2.zero;
@@ -42,6 +48,7 @@ public class ThirdPersonController : MonoBehaviour
     private void Awake()
     {
         characterController = GetComponent<CharacterController>();
+        previousYPosition = transform.position.y;
         
         // Автоматически найти дочерний объект с моделью, если не назначен
         if (modelTransform == null)
@@ -81,6 +88,9 @@ public class ThirdPersonController : MonoBehaviour
         ApplyGravity();
         HandleMovement();
         UpdateAnimator();
+        
+        // Сохраняем состояние прыжка для следующего кадра
+        wasJumpingLastFrame = isJumping;
     }
     
     private void LateUpdate()
@@ -289,8 +299,53 @@ public class ThirdPersonController : MonoBehaviour
             // Обновляем параметр Speed
             animator.SetFloat(SpeedHash, currentSpeed);
             
-            // Обновляем параметр isGrounded
-            animator.SetBool(IsGroundedHash, isGrounded);
+            // Определяем, нужно ли считать игрока на земле для аниматора
+            bool animatorIsGrounded = isGrounded;
+            
+            // Если игрок не на земле, проверяем, был ли это реальный прыжок
+            if (!isGrounded)
+            {
+                // Вычисляем изменение Y позиции
+                float currentYPosition = transform.position.y;
+                float yDelta = currentYPosition - previousYPosition;
+                
+                // Проверяем несколько условий для определения реального прыжка:
+                // 1. Флаг isJumping установлен (реальный прыжок был инициирован) - самый надежный индикатор
+                // 2. Или была вертикальная скорость выше порога (для случаев, когда флаг не успел установиться)
+                // 3. Или изменение Y позиции вверх больше порога (дополнительная проверка)
+                // Используем флаг прыжка как основной критерий, остальные - только как дополнение
+                bool isRealJump = isJumping || wasJumpingLastFrame;
+                
+                // Дополнительные проверки только если флаг прыжка не установлен
+                if (!isRealJump)
+                {
+                    // Проверяем вертикальную скорость (должна быть достаточно большой)
+                    bool hasHighVelocity = Mathf.Abs(velocity.y) >= minJumpVelocity;
+                    
+                    // Проверяем изменение Y позиции (должно быть достаточно большим)
+                    bool hasSignificantYChange = yDelta >= minJumpYDelta;
+                    
+                    // Оба условия должны выполняться одновременно для дополнительной проверки
+                    isRealJump = hasHighVelocity && hasSignificantYChange;
+                }
+                
+                // Если это не реальный прыжок, считаем что персонаж на земле (для анимации)
+                if (!isRealJump)
+                {
+                    animatorIsGrounded = true;
+                }
+                
+                // Сохраняем текущую Y позицию для следующего кадра
+                previousYPosition = currentYPosition;
+            }
+            else
+            {
+                // Если на земле, обновляем предыдущую позицию
+                previousYPosition = transform.position.y;
+            }
+            
+            // Обновляем параметр isGrounded в аниматоре
+            animator.SetBool(IsGroundedHash, animatorIsGrounded);
         }
     }
     
