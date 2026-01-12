@@ -1,5 +1,9 @@
 using UnityEngine;
 using UnityEngine.Events;
+using TMPro;
+#if Localization_yg
+using YG;
+#endif
 
 /// <summary>
 /// Объект, который можно взять и разместить.
@@ -8,13 +12,34 @@ using UnityEngine.Events;
 public class BrainrotObject : InteractableObject
 {
     [Header("Brainrot Object Settings")]
+    [TextArea(1, 3)]
+    [Tooltip("Имя объекта (можно использовать любые символы и регистр)")]
     [SerializeField] private string objectName = "Brainrot Object";
     
-    [Tooltip("Редкость объекта")]
-    [SerializeField] private int rarity = 1;
+    [Tooltip("Редкость объекта (всегда используйте английские значения: Common, Rare, Exclusive, Epic, Mythic, Legendary, Secret)")]
+    [SerializeField] private string rarity = "Common";
+    
+    [Tooltip("Доход от объекта (число)")]
+    [SerializeField] private int income = 0;
+    
+    [Tooltip("Скейлер дохода (M/B/T/K и т.д.)")]
+    [SerializeField] private string incomeScaler = "";
+    
+    [Tooltip("Уровень объекта")]
+    [SerializeField] private int level = 1;
     
     [Tooltip("Радиус для взятия объекта")]
     [SerializeField] private float takerange = 3f;
+    
+    [Header("UI Префаб с данными")]
+    [Tooltip("Префаб с TextMeshPro компонентами для отображения данных (Name, Rarity, Income, Level)")]
+    [SerializeField] private GameObject infoPrefab;
+    
+    [Tooltip("Смещение префаба относительно объекта")]
+    [SerializeField] private Vector3 infoPrefabOffset = new Vector3(0f, 2f, 0f);
+    
+    [Tooltip("Показывать префаб только когда объект размещён")]
+    [SerializeField] private bool showOnlyWhenPlaced = true;
     
     [Header("Настройки переноски")]
     [Tooltip("Смещение объекта при переноске по оси X (влево/вправо относительно игрока)")]
@@ -36,6 +61,18 @@ public class BrainrotObject : InteractableObject
     [Tooltip("Смещение объекта при размещении по оси Z (вперед/назад относительно игрока)")]
     [SerializeField] private float putOffsetZ = 1.5f;
     
+    [Tooltip("Масштаб объекта при размещении (если 0, используется текущий масштаб)")]
+    [SerializeField] private Vector3 placementScale = Vector3.zero;
+    
+    [Tooltip("Дополнительное смещение при размещении по оси X")]
+    [SerializeField] private float placementOffsetX = 0f;
+    
+    [Tooltip("Дополнительное смещение при размещении по оси Z")]
+    [SerializeField] private float placementOffsetZ = 0f;
+    
+    [Tooltip("Поворот объекта при размещении по оси Y (в градусах)")]
+    [SerializeField] private float placementRotationY = 0f;
+    
     [Header("Events")]
     [SerializeField] private UnityEvent onTake;
     [SerializeField] private UnityEvent onPut;
@@ -52,6 +89,13 @@ public class BrainrotObject : InteractableObject
     
     // Оптимизация: флаг для отслеживания состояния UI
     private bool uiHiddenByCarry = false;
+    
+    // Экземпляр префаба с данными
+    private GameObject infoPrefabInstance;
+    private TextMeshPro nameText;
+    private TextMeshPro rarityText;
+    private TextMeshPro incomeText;
+    private TextMeshPro levelText;
     
     private void Awake()
     {
@@ -86,10 +130,65 @@ public class BrainrotObject : InteractableObject
         {
             FindPlayerCarryController();
         }
+        
+        // Инициализируем префаб с данными, если он назначен
+        if (infoPrefab != null)
+        {
+            InitializeInfoPrefab();
+        }
     }
+    
+    private void OnEnable()
+    {
+#if Localization_yg
+        // Подписываемся на изменение языка для обновления текста редкости
+        YG2.onSwitchLang += OnLanguageChanged;
+        // Обновляем текст при включении, если префаб уже инициализирован
+        if (infoPrefabInstance != null)
+        {
+            UpdateInfoPrefabTexts();
+        }
+#endif
+    }
+    
+    private void OnDisable()
+    {
+#if Localization_yg
+        // Отписываемся от события изменения языка
+        YG2.onSwitchLang -= OnLanguageChanged;
+#endif
+    }
+    
+#if Localization_yg
+    /// <summary>
+    /// Обработчик изменения языка
+    /// </summary>
+    private void OnLanguageChanged(string lang)
+    {
+        // Обновляем тексты при изменении языка
+        if (infoPrefabInstance != null)
+        {
+            UpdateInfoPrefabTexts();
+        }
+    }
+#endif
     
     protected override void Update()
     {
+        // Обновляем видимость префаба с данными
+        UpdateInfoPrefabVisibility();
+        
+        // Если объект размещён, скрываем UI взаимодействия
+        if (isPlaced)
+        {
+            if (HasUI())
+            {
+                HideUI();
+            }
+            // Не вызываем base.Update() когда объект размещён - UI не нужен
+            return;
+        }
+        
         // Если объект взят, все равно нужно обрабатывать ввод для возможности положить объект
         if (isCarried)
         {
@@ -239,6 +338,24 @@ public class BrainrotObject : InteractableObject
     /// </summary>
     public void Put()
     {
+        // Проверяем, есть ли активная панель размещения
+        PlacementPanel activePanel = PlacementPanel.GetActivePanel();
+        if (activePanel != null)
+        {
+            // Если есть активная панель, размещаем объект на ней
+            activePanel.PlaceOnPanel(this);
+            return;
+        }
+        
+        // Иначе выполняем стандартное размещение на землю
+        PutOnGround();
+    }
+    
+    /// <summary>
+    /// Положить объект на землю (внутренний метод)
+    /// </summary>
+    private void PutOnGround()
+    {
         if (playerCarryController == null)
         {
             Debug.LogWarning($"[BrainrotObject] {objectName}: PlayerCarryController не найден!");
@@ -257,8 +374,8 @@ public class BrainrotObject : InteractableObject
         Vector3 forwardDirection = playerTransform.forward;
         Vector3 rightDirection = playerTransform.right;
         Vector3 putPosition = playerTransform.position + 
-                             forwardDirection * putOffsetZ + 
-                             rightDirection * putOffsetX;
+                             forwardDirection * (putOffsetZ + placementOffsetZ) + 
+                             rightDirection * (putOffsetX + placementOffsetX);
         
         // Используем Raycast для определения позиции на земле
         RaycastHit hit;
@@ -272,13 +389,31 @@ public class BrainrotObject : InteractableObject
             putPosition.y = playerTransform.position.y;
         }
         
-        // Устанавливаем позицию объекта
-        transform.position = putPosition;
-        
+        // Размещаем объект на позиции
+        PutAtPosition(putPosition, Quaternion.Euler(0f, placementRotationY, 0f));
+    }
+    
+    /// <summary>
+    /// Размещает объект на заданной позиции с заданным поворотом
+    /// </summary>
+    public void PutAtPosition(Vector3 position, Quaternion rotation)
+    {
         // Убеждаемся, что компоненты кэшированы
         if (!componentsCached)
         {
             CacheComponents();
+        }
+        
+        // Устанавливаем позицию объекта
+        transform.position = position;
+        
+        // Устанавливаем поворот объекта (используем переданный поворот)
+        transform.rotation = rotation;
+        
+        // Устанавливаем масштаб объекта при размещении (если задан)
+        if (placementScale != Vector3.zero)
+        {
+            transform.localScale = placementScale;
         }
         
         // Включаем физику обратно - используем кэшированный компонент
@@ -304,7 +439,10 @@ public class BrainrotObject : InteractableObject
         isPlaced = true;
         
         // Освобождаем объект из PlayerCarryController
-        playerCarryController.DropObject();
+        if (playerCarryController != null)
+        {
+            playerCarryController.DropObject();
+        }
         
         // Сбрасываем состояние взаимодействия, чтобы UI мог появиться снова при следующем приближении
         ResetInteraction();
@@ -313,7 +451,7 @@ public class BrainrotObject : InteractableObject
         // Вызываем событие
         onPut.Invoke();
         
-        Debug.Log($"[BrainrotObject] {objectName}: Объект размещен на позиции {putPosition}");
+        Debug.Log($"[BrainrotObject] {objectName}: Объект размещен на позиции {position}");
     }
     
     
@@ -328,9 +466,89 @@ public class BrainrotObject : InteractableObject
     /// <summary>
     /// Получить редкость объекта
     /// </summary>
-    public int GetRarity()
+    public string GetRarity()
     {
         return rarity;
+    }
+    
+    /// <summary>
+    /// Установить редкость объекта
+    /// </summary>
+    public void SetRarity(string newRarity)
+    {
+        rarity = newRarity;
+        UpdateInfoPrefabTexts();
+    }
+    
+    /// <summary>
+    /// Получить доход от объекта
+    /// </summary>
+    public int GetIncome()
+    {
+        return income;
+    }
+    
+    /// <summary>
+    /// Получить скейлер дохода
+    /// </summary>
+    public string GetIncomeScaler()
+    {
+        return incomeScaler;
+    }
+    
+    /// <summary>
+    /// Установить доход от объекта
+    /// </summary>
+    public void SetIncome(int newIncome)
+    {
+        income = newIncome;
+        UpdateInfoPrefabTexts();
+    }
+    
+    /// <summary>
+    /// Установить скейлер дохода
+    /// </summary>
+    public void SetIncomeScaler(string newScaler)
+    {
+        incomeScaler = newScaler;
+        UpdateInfoPrefabTexts();
+    }
+    
+    /// <summary>
+    /// Установить доход и скейлер одновременно
+    /// </summary>
+    public void SetIncome(int newIncome, string newScaler)
+    {
+        income = newIncome;
+        incomeScaler = newScaler;
+        UpdateInfoPrefabTexts();
+    }
+    
+    /// <summary>
+    /// Форматирует income в формате "число + scaler + /S" (без десятичных знаков, заглавная S)
+    /// </summary>
+    private string FormatIncome(int incomeValue, string scaler)
+    {
+        string result = incomeValue.ToString();
+        
+        // Добавляем скейлер, если он указан (в верхнем регистре)
+        if (!string.IsNullOrEmpty(scaler))
+        {
+            result += scaler.ToUpper();
+        }
+        
+        // Добавляем "/S" в конец (заглавная S)
+        result += "/S";
+        
+        return result;
+    }
+    
+    /// <summary>
+    /// Форматирует level в формате "Lv.число"
+    /// </summary>
+    private string FormatLevel(int levelValue)
+    {
+        return $"Lv.{levelValue}";
     }
     
     /// <summary>
@@ -470,5 +688,371 @@ public class BrainrotObject : InteractableObject
     public void SetPutOffsetZ(float offsetZ)
     {
         putOffsetZ = offsetZ;
+    }
+    
+    /// <summary>
+    /// Получить масштаб при размещении
+    /// </summary>
+    public Vector3 GetPlacementScale()
+    {
+        return placementScale;
+    }
+    
+    /// <summary>
+    /// Установить масштаб при размещении
+    /// </summary>
+    public void SetPlacementScale(Vector3 scale)
+    {
+        placementScale = scale;
+    }
+    
+    /// <summary>
+    /// Получить дополнительное смещение по X при размещении
+    /// </summary>
+    public float GetPlacementOffsetX()
+    {
+        return placementOffsetX;
+    }
+    
+    /// <summary>
+    /// Установить дополнительное смещение по X при размещении
+    /// </summary>
+    public void SetPlacementOffsetX(float offsetX)
+    {
+        placementOffsetX = offsetX;
+    }
+    
+    /// <summary>
+    /// Получить дополнительное смещение по Z при размещении
+    /// </summary>
+    public float GetPlacementOffsetZ()
+    {
+        return placementOffsetZ;
+    }
+    
+    /// <summary>
+    /// Установить дополнительное смещение по Z при размещении
+    /// </summary>
+    public void SetPlacementOffsetZ(float offsetZ)
+    {
+        placementOffsetZ = offsetZ;
+    }
+    
+    /// <summary>
+    /// Получить поворот по Y при размещении
+    /// </summary>
+    public float GetPlacementRotationY()
+    {
+        return placementRotationY;
+    }
+    
+    /// <summary>
+    /// Установить поворот по Y при размещении
+    /// </summary>
+    public void SetPlacementRotationY(float rotationY)
+    {
+        placementRotationY = rotationY;
+    }
+    
+    /// <summary>
+    /// Получить уровень объекта
+    /// </summary>
+    public int GetLevel()
+    {
+        return level;
+    }
+    
+    /// <summary>
+    /// Установить уровень объекта
+    /// </summary>
+    public void SetLevel(int newLevel)
+    {
+        level = newLevel;
+        UpdateInfoPrefabTexts();
+    }
+    
+    /// <summary>
+    /// Инициализирует префаб с данными
+    /// </summary>
+    private void InitializeInfoPrefab()
+    {
+        if (infoPrefab == null) return;
+        
+        // Создаём экземпляр префаба
+        infoPrefabInstance = Instantiate(infoPrefab, transform);
+        infoPrefabInstance.transform.localPosition = infoPrefabOffset;
+        infoPrefabInstance.transform.localRotation = Quaternion.identity;
+        
+        // Добавляем простой скрипт для поворота текста к камере
+        // Используем компонент InfoPrefabBillboard вместо стандартного BillboardUI
+        InfoPrefabBillboard billboard = infoPrefabInstance.GetComponent<InfoPrefabBillboard>();
+        if (billboard == null)
+        {
+            billboard = infoPrefabInstance.AddComponent<InfoPrefabBillboard>();
+        }
+        
+        // Находим компоненты TextMeshPro по именам дочерних объектов
+        FindTextComponents();
+        
+        // Обновляем тексты
+        UpdateInfoPrefabTexts();
+        
+        // Устанавливаем начальную видимость
+        UpdateInfoPrefabVisibility();
+    }
+    
+    /// <summary>
+    /// Находит компоненты TextMeshPro по именам дочерних объектов
+    /// </summary>
+    private void FindTextComponents()
+    {
+        if (infoPrefabInstance == null) return;
+        
+        // Ищем компоненты TextMeshPro в дочерних объектах по именам
+        Transform[] children = infoPrefabInstance.GetComponentsInChildren<Transform>(true);
+        
+        foreach (Transform child in children)
+        {
+            TextMeshPro tmp = child.GetComponent<TextMeshPro>();
+            if (tmp != null)
+            {
+                switch (child.name)
+                {
+                    case "Name":
+                        nameText = tmp;
+                        break;
+                    case "Rarity":
+                        rarityText = tmp;
+                        break;
+                    case "Income":
+                        incomeText = tmp;
+                        break;
+                    case "Level":
+                        levelText = tmp;
+                        break;
+                }
+            }
+        }
+        
+        // Проверяем, что все компоненты найдены
+        if (nameText == null)
+            Debug.LogWarning($"[BrainrotObject] {objectName}: Не найден TextMeshPro компонент 'Name' в префабе {infoPrefab.name}");
+        if (rarityText == null)
+            Debug.LogWarning($"[BrainrotObject] {objectName}: Не найден TextMeshPro компонент 'Rarity' в префабе {infoPrefab.name}");
+        if (incomeText == null)
+            Debug.LogWarning($"[BrainrotObject] {objectName}: Не найден TextMeshPro компонент 'Income' в префабе {infoPrefab.name}");
+        if (levelText == null)
+            Debug.LogWarning($"[BrainrotObject] {objectName}: Не найден TextMeshPro компонент 'Level' в префабе {infoPrefab.name}");
+    }
+    
+    /// <summary>
+    /// Обновляет тексты в префабе с данными
+    /// </summary>
+    private void UpdateInfoPrefabTexts()
+    {
+        if (nameText != null)
+            nameText.text = objectName;
+        
+        if (rarityText != null)
+        {
+            // Получаем локализованный текст редкости
+            string localizedRarity = GetLocalizedRarity(rarity);
+            // Применяем цвет в зависимости от редкости (используем оригинальное английское значение для определения цвета)
+            ApplyRarityColor(rarityText, localizedRarity, rarity);
+        }
+        
+        if (incomeText != null)
+        {
+            // Форматируем income в формате "число + scaler + /s"
+            string formattedIncome = FormatIncome(income, incomeScaler);
+            incomeText.text = formattedIncome;
+        }
+        
+        if (levelText != null)
+        {
+            // Форматируем level в формате "Lv.число"
+            string formattedLevel = FormatLevel(level);
+            levelText.text = formattedLevel;
+        }
+    }
+    
+    /// <summary>
+    /// Получает локализованный текст редкости на основе текущего языка YG2
+    /// В параметрах всегда используется английское значение, но отображается локализованный текст
+    /// </summary>
+    private string GetLocalizedRarity(string englishRarity)
+    {
+        // Получаем текущий язык из YG2
+        string currentLang = "ru"; // По умолчанию русский
+#if Localization_yg
+        if (YG2.lang != null)
+        {
+            currentLang = YG2.lang;
+        }
+#endif
+        
+        // Приводим английское значение к нижнему регистру для сравнения
+        string rarityLower = englishRarity.ToLower();
+        
+        // Если язык русский, возвращаем русский перевод
+        if (currentLang == "ru")
+        {
+            switch (rarityLower)
+            {
+                case "common":
+                    return "Обычный";
+                case "rare":
+                    return "Редкий";
+                case "exclusive":
+                    return "Эксклюзивный";
+                case "epic":
+                    return "Эпический";
+                case "mythic":
+                    return "Мифический";
+                case "legendary":
+                    return "Легендарный";
+                case "secret":
+                    return "Секретный";
+                default:
+                    return englishRarity; // Если не найдено, возвращаем оригинал
+            }
+        }
+        
+        // Если язык английский или другой, возвращаем английское значение
+        // Приводим к правильному регистру (первая буква заглавная)
+        if (englishRarity.Length > 0)
+        {
+            return char.ToUpper(englishRarity[0]) + (englishRarity.Length > 1 ? englishRarity.Substring(1).ToLower() : "");
+        }
+        
+        return englishRarity;
+    }
+    
+    /// <summary>
+    /// Применяет цвет к тексту редкости в зависимости от значения
+    /// </summary>
+    private void ApplyRarityColor(TextMeshPro textComponent, string localizedRarityText, string originalEnglishRarity)
+    {
+        if (textComponent == null) return;
+        
+        // Используем оригинальное английское значение для определения цвета
+        string rarityLower = originalEnglishRarity.ToLower();
+        
+        // Для Secret/Секретный используем специальный радужный градиент
+        if (rarityLower == "secret")
+        {
+            ApplySecretGradient(textComponent, localizedRarityText);
+            return;
+        }
+        
+        // Для остальных редкостей применяем обычный цвет (используем английское значение)
+        Color rarityColor = GetRarityColor(rarityLower);
+        
+        // Используем rich text для применения цвета к локализованному тексту
+        string coloredText = $"<color=#{ColorUtility.ToHtmlStringRGB(rarityColor)}>{localizedRarityText}</color>";
+        textComponent.text = coloredText;
+    }
+    
+    /// <summary>
+    /// Получает цвет для редкости (использует только английские названия)
+    /// </summary>
+    private Color GetRarityColor(string rarityLower)
+    {
+        switch (rarityLower)
+        {
+            case "common":
+                return new Color(0.5f, 0.5f, 0.5f); // Серый
+                
+            case "rare":
+                return new Color(0f, 0.8f, 0.8f); // Бирюзовый
+                
+            case "exclusive":
+                return new Color(0f, 0.4f, 1f); // Синий
+                
+            case "epic":
+                return new Color(0.6f, 0.2f, 1f); // Фиолетовый
+                
+            case "mythic":
+                return new Color(1f, 0f, 0f); // Красный
+                
+            case "legendary":
+                return new Color(1f, 0.84f, 0f); // Золотой
+                
+            default:
+                return Color.white; // По умолчанию белый
+        }
+    }
+    
+    /// <summary>
+    /// Применяет радужный градиент для Secret редкости
+    /// </summary>
+    private void ApplySecretGradient(TextMeshPro textComponent, string localizedRarityText)
+    {
+        if (textComponent == null) return;
+        
+        // Создаём радужный эффект, применяя разные цвета к каждому символу
+        // Цвета радуги: красный, оранжевый, жёлтый, зелёный, синий, индиго, фиолетовый
+        char[] chars = localizedRarityText.ToCharArray();
+        System.Text.StringBuilder gradientText = new System.Text.StringBuilder();
+        
+        Color[] rainbowColors = new Color[]
+        {
+            new Color(1f, 0f, 0f),      // Красный
+            new Color(1f, 0.5f, 0f),    // Оранжевый
+            new Color(1f, 1f, 0f),      // Жёлтый
+            new Color(0f, 1f, 0f),       // Зелёный
+            new Color(0f, 0f, 1f),       // Синий
+            new Color(0.29f, 0f, 0.51f), // Индиго
+            new Color(0.58f, 0f, 0.83f)  // Фиолетовый
+        };
+        
+        for (int i = 0; i < chars.Length; i++)
+        {
+            Color charColor = rainbowColors[i % rainbowColors.Length];
+            string colorHex = ColorUtility.ToHtmlStringRGB(charColor);
+            gradientText.Append($"<color=#{colorHex}>{chars[i]}</color>");
+        }
+        
+        textComponent.text = gradientText.ToString();
+    }
+    
+    /// <summary>
+    /// Обновляет видимость префаба с данными в зависимости от состояния объекта
+    /// </summary>
+    private void UpdateInfoPrefabVisibility()
+    {
+        if (infoPrefabInstance == null) return;
+        
+        bool shouldShow = true;
+        
+        if (showOnlyWhenPlaced)
+        {
+            // Показывать только когда объект размещён
+            shouldShow = isPlaced;
+        }
+        else
+        {
+            // Показывать всегда, кроме когда объект в руках
+            shouldShow = !isCarried;
+        }
+        
+        infoPrefabInstance.SetActive(shouldShow);
+    }
+    
+    /// <summary>
+    /// Обновляет данные в префабе (публичный метод для внешнего вызова)
+    /// </summary>
+    public void RefreshInfoPrefab()
+    {
+        UpdateInfoPrefabTexts();
+    }
+    
+    private void OnDestroy()
+    {
+        // Уничтожаем экземпляр префаба при уничтожении объекта
+        if (infoPrefabInstance != null)
+        {
+            Destroy(infoPrefabInstance);
+        }
     }
 }
