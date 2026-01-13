@@ -1,0 +1,38 @@
+newmtl Part6Mtl
+Material Color
+Ka 0.124741 0.113921 0.121986
+Kd 0.124741 0.113921 0.121986
+Ks 0.00538098 0.00491424 0.00526213 
+
+d 1
+
+Ns 0
+
+map_Ka Part6_diff.png
+map_Kd Part6_diff.png
+map_d Part6_diff.png
+
+map_Bump Part6_nmap.png
+
+map_Ns Part6_spec.png
+
+newmtl Wedge1Mtl
+Material Color
+Ka 0.103634 0.108711 0.14198
+Kd 0.103634 0.108711 0.14198
+Ks 0.00650253 0.00682109 0.00890857 
+
+d 1
+
+Ns 0
+
+newmtl Part3Mtl
+Material Color
+Ka 0.891262 0.899384 0.899384
+Kd 0.891262 0.899384 0.899384
+Ks 0.0803883 0.081121 0.081121 
+
+d 1
+
+Ns 0
+

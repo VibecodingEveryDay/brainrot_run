@@ -43,6 +43,10 @@ public class EarnPanel : MonoBehaviour
     // Флаг, находится ли игрок на панели
     private bool isPlayerOnPanel = false;
     
+    // Кэш для оптимизации - обновляем текст только при изменении
+    private string lastFormattedBalance = "";
+    private double lastAccumulatedBalance = -1;
+    
     private void Awake()
     {
         // Автоматически находим TextMeshPro компонент, если не назначен
@@ -116,22 +120,13 @@ public class EarnPanel : MonoBehaviour
         // Проверяем, находится ли игрок на панели
         CheckPlayerOnPanel();
         
-        // Обновляем текст баланса (только если игрок не на панели, иначе текст уже обновлён в CollectBalance)
+        // Обновляем текст баланса только если игрок не на панели и баланс изменился
         if (!isPlayerOnPanel)
         {
-            UpdateMoneyText();
-        }
-        else
-        {
-            // Если игрок на панели, но баланс почему-то не обнулён, обнуляем
-            if (accumulatedBalance > 0.001) // Используем небольшой порог для учёта погрешностей float
+            // Обновляем текст только при изменении баланса (оптимизация)
+            if (Mathf.Abs((float)(accumulatedBalance - lastAccumulatedBalance)) > 0.0001f)
             {
-                if (debug)
-                {
-                    string formattedAccumulated = FormatBalance(accumulatedBalance);
-                    Debug.LogWarning($"[EarnPanel] Update: Игрок на панели (isPlayerOnPanel=true), но баланс > 0 ({formattedAccumulated}). Принудительно обнуляем.");
-                }
-                CollectBalance();
+                UpdateMoneyText();
             }
         }
     }
@@ -164,19 +159,13 @@ public class EarnPanel : MonoBehaviour
             Debug.Log($"[EarnPanel] Игрок {(isPlayerOnPanel ? "на" : "не на")} панели. Расстояние: {distance:F2}, Радиус: {detectionRadius}");
         }
         
-        // Если игрок только что наступил на панель, обнуляем баланс
+        // Если игрок только что наступил на панель, обнуляем баланс (один раз)
         if (!wasOnPanel && isPlayerOnPanel)
         {
             if (debug)
             {
                 Debug.Log($"[EarnPanel] Игрок наступил на панель! Расстояние: {distance:F2}");
             }
-            CollectBalance();
-        }
-        
-        // Если игрок на панели, постоянно обнуляем баланс
-        if (isPlayerOnPanel && accumulatedBalance > 0.001)
-        {
             CollectBalance();
         }
     }
@@ -304,9 +293,16 @@ public class EarnPanel : MonoBehaviour
     {
         if (moneyText == null) return;
         
+        // Кэшируем значение для оптимизации
+        lastAccumulatedBalance = accumulatedBalance;
+        
         if (accumulatedBalance <= 0)
         {
-            moneyText.text = "0";
+            if (lastFormattedBalance != "0")
+            {
+                moneyText.text = "0";
+                lastFormattedBalance = "0";
+            }
             return;
         }
         
@@ -321,7 +317,12 @@ public class EarnPanel : MonoBehaviour
             formattedBalance = formattedBalance.Substring(0, 8);
         }
         
-        moneyText.text = formattedBalance;
+        // Обновляем текст только если он изменился (оптимизация)
+        if (formattedBalance != lastFormattedBalance)
+        {
+            moneyText.text = formattedBalance;
+            lastFormattedBalance = formattedBalance;
+        }
     }
     
     /// <summary>
@@ -428,44 +429,18 @@ public class EarnPanel : MonoBehaviour
     /// </summary>
     public void CollectBalance()
     {
-        if (debug)
-        {
-            string formattedAccumulated = FormatBalance(accumulatedBalance);
-            Debug.Log($"[EarnPanel] CollectBalance вызван. Текущий баланс: {formattedAccumulated}, moneyText: {(moneyText != null ? "найден" : "NULL")}");
-        }
-        
         // Конвертируем double в int (теряем дробную часть, но это нормально для баланса)
         long balanceToAdd = (long)accumulatedBalance;
         
-        if (debug)
-        {
-            string formattedToAdd = FormatBalance(balanceToAdd);
-            Debug.Log($"[EarnPanel] Баланс для добавления: {formattedToAdd}");
-        }
-        
         // Всегда обнуляем баланс панели при наступлении игрока
         accumulatedBalance = 0.0;
-        
-        if (debug)
-        {
-            Debug.Log($"[EarnPanel] Баланс обнулён: 0");
-        }
+        lastAccumulatedBalance = 0.0;
         
         // Немедленно обновляем текст, чтобы показать 0
         if (moneyText != null)
         {
             moneyText.text = "0";
-            if (debug)
-            {
-                Debug.Log($"[EarnPanel] Текст обновлён на: '{moneyText.text}'");
-            }
-        }
-        else
-        {
-            if (debug)
-            {
-                Debug.LogWarning($"[EarnPanel] moneyText == NULL! Текст не может быть обновлён!");
-            }
+            lastFormattedBalance = "0";
         }
         
         // Добавляем баланс в GameStorage только если он больше 0
@@ -474,37 +449,21 @@ public class EarnPanel : MonoBehaviour
             // Проверяем, что GameStorage доступен
             if (GameStorage.Instance != null)
             {
-                string balanceBeforeFormatted = GameStorage.Instance.FormatBalance();
+                string balanceBeforeFormatted = null;
+                if (debug)
+                {
+                    balanceBeforeFormatted = GameStorage.Instance.FormatBalance();
+                }
                 
                 // Используем AddBalanceLong для корректной обработки больших значений с множителями
                 GameStorage.Instance.AddBalanceLong(balanceToAdd);
                 
-                string balanceAfterFormatted = GameStorage.Instance.FormatBalance();
-                string balanceToAddFormatted = FormatBalance(balanceToAdd);
-                
                 if (debug)
                 {
+                    string balanceAfterFormatted = GameStorage.Instance.FormatBalance();
+                    string balanceToAddFormatted = FormatBalance(balanceToAdd);
                     Debug.Log($"[EarnPanel] Собран баланс: {balanceToAddFormatted}. Баланс игрока: {balanceBeforeFormatted} -> {balanceAfterFormatted}");
                 }
-                else
-                {
-                    // Даже без debug показываем форматированный баланс в обычном логе
-                    Debug.Log($"[EarnPanel] Собран баланс: {balanceToAddFormatted}. Баланс игрока: {balanceBeforeFormatted} -> {balanceAfterFormatted}");
-                }
-            }
-            else
-            {
-                if (debug)
-                {
-                    Debug.LogError($"[EarnPanel] GameStorage.Instance == NULL! Баланс не может быть добавлен!");
-                }
-            }
-        }
-        else
-        {
-            if (debug)
-            {
-                Debug.Log($"[EarnPanel] Баланс для добавления = 0, пропускаем добавление в GameStorage");
             }
         }
     }
