@@ -22,6 +22,8 @@ public class WallSpawner : MonoBehaviour
     [SerializeField] private float wall4Speed = 5f;
     
     [Header("Spawn Positions")]
+    [Tooltip("Позиция по X для спавна стен")]
+    [SerializeField] private float spawnPosX = 0f;
     [Tooltip("Начальная позиция по Z для спавна стен")]
     [SerializeField] private float startPosZ = 50f;
     [Tooltip("Конечная позиция по Z (стена уничтожается при достижении)")]
@@ -149,8 +151,11 @@ public class WallSpawner : MonoBehaviour
             return;
         }
         
+        // Вычисляем стартовую позицию по Z в зависимости от позиции игрока
+        float actualStartPosZ = GetActualStartPosZ();
+        
         // Создаем стену
-        Vector3 spawnPosition = new Vector3(-108f, 0f, startPosZ);
+        Vector3 spawnPosition = new Vector3(spawnPosX, 0f, actualStartPosZ);
         GameObject wall = Instantiate(prefabToSpawn, spawnPosition, Quaternion.identity);
         
         if (wall == null)
@@ -167,7 +172,34 @@ public class WallSpawner : MonoBehaviour
         
         if (debug)
         {
-            Debug.Log($"[WallSpawner] Создана стена {randomIndex + 1} на позиции {spawnPosition}, скорость: {speed}");
+            Debug.Log($"[WallSpawner] Создана стена {randomIndex + 1} на позиции {spawnPosition}, скорость: {speed}, Z игрока: {(playerTransform != null ? playerTransform.position.z : 0f)}");
+        }
+    }
+    
+    /// <summary>
+    /// Получает актуальную стартовую позицию по Z в зависимости от позиции игрока
+    /// Если Z игрока < 50, возвращает 5/8 от startPosZ
+    /// Если Z игрока >= 50, возвращает полное значение startPosZ (8/8)
+    /// </summary>
+    private float GetActualStartPosZ()
+    {
+        if (playerTransform == null)
+        {
+            // Если игрок не найден, используем полное значение
+            return startPosZ;
+        }
+        
+        float playerZ = playerTransform.position.z;
+        
+        if (playerZ < 50f)
+        {
+            // Если игрок на Z < 50, используем 5/8 от заданного значения
+            return startPosZ * (5f / 8f);
+        }
+        else
+        {
+            // Если игрок на Z >= 50, используем полное значение (8/8)
+            return startPosZ;
         }
     }
     

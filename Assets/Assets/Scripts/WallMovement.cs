@@ -15,7 +15,7 @@ public class WallMovement : MonoBehaviour
     private Transform playerTransform;
     
     // Параметры проверки коллизии
-    private const float minX = -42.2f;
+    private const float minX = -142f;
     private const float maxX = 47.2f;
     private const float minY = -1f;
     [SerializeField] private float zTolerance = 3f; // Допустимая разница по Z для обнаружения коллизии (настраивается в Inspector)
@@ -96,7 +96,7 @@ public class WallMovement : MonoBehaviour
     
     /// <summary>
     /// Проверяет коллизию с игроком по заданным условиям:
-    /// X: от -42.2 до 47.2
+    /// X: от -142 до 47.2
     /// Y: > -1
     /// Z: позиция игрока и стены совпадают (с учетом движения стены)
     /// </summary>
@@ -139,7 +139,7 @@ public class WallMovement : MonoBehaviour
             return;
         }
         
-        // Проверка X: игрок должен быть в диапазоне от -42.2 до 47.2
+        // Проверка X: игрок должен быть в диапазоне от -142 до 47.2
         bool checkX = playerPos.x >= minX && playerPos.x <= maxX;
         
         // Проверка Y: игрок должен быть выше -1

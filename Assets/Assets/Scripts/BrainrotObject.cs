@@ -70,6 +70,9 @@ public class BrainrotObject : InteractableObject
     [Tooltip("Поворот объекта при размещении по оси Y (в градусах)")]
     [SerializeField] private float placementRotationY = 0f;
     
+    [Tooltip("Поворот объекта при спавне по оси Y (в градусах)")]
+    [SerializeField] private float spawnRotationY = 0f;
+    
     [Header("Events")]
     [SerializeField] private UnityEvent onTake;
     [SerializeField] private UnityEvent onPut;
@@ -453,14 +456,35 @@ public class BrainrotObject : InteractableObject
             playerCarryController.DropObject();
         }
         
-        // Сбрасываем состояние взаимодействия, чтобы UI мог появиться снова при следующем приближении
-        ResetInteraction();
-        uiHiddenByCarry = false; // Сбрасываем флаг для повторного показа UI
+        // ВАЖНО: Проверяем, размещён ли объект на панели, перед сбросом состояния взаимодействия
+        // Если объект размещён на панели, НЕ сбрасываем состояние взаимодействия,
+        // чтобы Update() правильно определил, что объект на панели, а не на земле
+        // Проверяем сразу и после небольшой задержки (на случай, если ссылка устанавливается в том же кадре)
+        bool isPlacedOnPanel = PlacementPanel.IsBrainrotPlacedOnPanel(this);
+        
+        // Если объект НЕ размещён на панели, сбрасываем состояние взаимодействия для показа UI
+        // Если объект размещён на панели, состояние взаимодействия уже должно быть правильным
+        // (объект не должен обрабатывать взаимодействие через base.Update())
+        if (!isPlacedOnPanel)
+        {
+            // Сбрасываем состояние взаимодействия только если объект размещён на земле
+            ResetInteraction();
+            uiHiddenByCarry = false; // Сбрасываем флаг для повторного показа UI
+        }
+        else
+        {
+            // Если объект размещён на панели, скрываем UI и блокируем взаимодействие
+            HideUI();
+            uiHiddenByCarry = false;
+            // НЕ вызываем ResetInteraction() - это позволит Update() правильно определить состояние
+            // ВАЖНО: interactionCompleted остаётся в текущем состоянии (скорее всего false)
+            // чтобы не блокировать будущие взаимодействия через панель
+        }
         
         // Вызываем событие
         onPut.Invoke();
         
-        Debug.Log($"[BrainrotObject] {objectName}: Объект размещен на позиции {position}");
+        Debug.Log($"[BrainrotObject] {objectName}: Объект размещен на позиции {position}, размещен на панели: {isPlacedOnPanel}");
     }
     
     
@@ -1085,9 +1109,9 @@ public class BrainrotObject : InteractableObject
             case "common":
                 return 1L;             // 1^12
             case "rare":
-                return 4096L;          // 2^12
+                return 100L;          // 2^12
             case "exclusive":
-                return 531441L;        // 3^12
+                return 10000L;        // 3^12
             case "epic":
                 return 16777216L;      // 4^12
             case "mythic":

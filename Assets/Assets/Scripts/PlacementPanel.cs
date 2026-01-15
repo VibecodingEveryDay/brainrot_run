@@ -343,8 +343,9 @@ public class PlacementPanel : InteractableObject
             else
             {
                 // Проверяем расстояние до объекта - если он слишком далеко от панели, он больше не на панели
+                // ВАЖНО: Увеличиваем радиус проверки до 3 единиц для более надёжного определения
                 float distance = Vector3.Distance(placedBrainrot.transform.position, GetPlacementPosition());
-                if (distance > 2f) // Если объект дальше 2 единиц от центра панели
+                if (distance > 3f) // Если объект дальше 3 единиц от центра панели
                 {
                     placedBrainrot = null;
                 }
@@ -353,7 +354,8 @@ public class PlacementPanel : InteractableObject
         else
         {
             // Ищем размещённые brainrot объекты рядом с панелью
-            // Ищем все brainrot объекты в сцене и проверяем расстояние до панели
+            // ВАЖНО: Ищем только среди объектов, которые НЕ размещены на других панелях
+            // Это предотвращает конфликты, когда один объект может быть найден несколькими панелями
             BrainrotObject[] allBrainrots = FindObjectsByType<BrainrotObject>(FindObjectsSortMode.None);
             Vector3 panelCenter = GetPlacementPosition();
             
@@ -361,9 +363,27 @@ public class PlacementPanel : InteractableObject
             {
                 if (brainrot != null && brainrot.IsPlaced() && !brainrot.IsCarried())
                 {
+                    // ВАЖНО: Проверяем, не размещён ли этот объект уже на другой панели
+                    // Если он уже размещён на другой панели, пропускаем его
+                    bool alreadyOnAnotherPanel = false;
+                    foreach (PlacementPanel otherPanel in allPanels)
+                    {
+                        if (otherPanel != null && otherPanel != this && otherPanel.placedBrainrot == brainrot)
+                        {
+                            alreadyOnAnotherPanel = true;
+                            break;
+                        }
+                    }
+                    
+                    if (alreadyOnAnotherPanel)
+                    {
+                        continue; // Пропускаем объекты, которые уже размещены на других панелях
+                    }
+                    
                     // Проверяем расстояние до панели
+                    // ВАЖНО: Увеличиваем радиус поиска до 3 единиц для более надёжного определения
                     float distance = Vector3.Distance(brainrot.transform.position, panelCenter);
-                    if (distance < 2f) // Если объект близко к панели (в радиусе 2 единиц)
+                    if (distance < 3f) // Если объект близко к панели (в радиусе 3 единиц)
                     {
                         // Нашли размещённый brainrot на этой панели
                         placedBrainrot = brainrot;
@@ -597,15 +617,23 @@ public class PlacementPanel : InteractableObject
             placementRotation = transform.rotation;
         }
         
+        // ВАЖНО: Сохраняем ссылку на размещённый объект ПЕРЕД размещением
+        // Это критично, чтобы IsBrainrotPlacedOnPanel() могла правильно определить, что объект размещён на панели
+        // НЕ очищаем старую ссылку - если на панели уже был объект, он должен быть заменён
+        placedBrainrot = brainrotObject;
+        
         // Используем метод PutAtPosition из BrainrotObject для размещения
         // Этот метод установит позицию, поворот, масштаб, включит физику и коллайдеры,
         // освободит объект из рук и установит состояние
+        // ВАЖНО: PutAtPosition() внутри проверяет IsBrainrotPlacedOnPanel(), которая должна найти этот объект
         brainrotObject.PutAtPosition(placementPosition, placementRotation);
         
-        // Сохраняем ссылку на размещённый объект
+        // ВАЖНО: После размещения принудительно устанавливаем ссылку ещё раз
+        // Это гарантирует, что даже если CheckPlacedBrainrot() очистит ссылку в том же кадре,
+        // она будет восстановлена
         placedBrainrot = brainrotObject;
         
-        Debug.Log($"[PlacementPanel] Объект {brainrotObject.GetObjectName()} размещен на панели в позиции {placementPosition}");
+        Debug.Log($"[PlacementPanel] Объект {brainrotObject.GetObjectName()} размещен на панели в позиции {placementPosition}, placedBrainrot установлен: {placedBrainrot != null}, ID панели: {panelID}");
     }
     
     /// <summary>
