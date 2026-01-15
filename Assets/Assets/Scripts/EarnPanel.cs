@@ -217,73 +217,11 @@ public class EarnPanel : MonoBehaviour
             // Если есть размещённый brainrot, добавляем доход
             if (placedBrainrot != null && placedBrainrot.IsPlaced() && !placedBrainrot.IsCarried())
             {
-                int income = placedBrainrot.GetIncome();
-                string scaler = placedBrainrot.GetIncomeScaler();
-                
-                // Конвертируем доход в число с учётом скейлера
-                double incomeValue = ConvertIncomeToDouble(income, scaler);
-                accumulatedBalance += incomeValue;
+                // Получаем финальный доход (уже включает редкость и уровень)
+                double finalIncome = placedBrainrot.GetFinalIncome();
+                accumulatedBalance += finalIncome;
             }
         }
-    }
-    
-    /// <summary>
-    /// Конвертирует доход и скейлер в число типа double
-    /// </summary>
-    private double ConvertIncomeToDouble(int income, string scaler)
-    {
-        double value = income;
-        
-        if (!string.IsNullOrEmpty(scaler))
-        {
-            scaler = scaler.ToUpper();
-            
-            // Конвертируем скейлер в множитель
-            switch (scaler)
-            {
-                case "K":
-                    value *= 1000.0;
-                    break;
-                case "M":
-                    value *= 1000000.0;
-                    break;
-                case "B":
-                    value *= 1000000000.0;
-                    break;
-                case "T":
-                    value *= 1000000000000.0;
-                    break;
-                default:
-                    // Пытаемся распарсить как число (например, "1.5M")
-                    if (scaler.Length > 1)
-                    {
-                        char lastChar = scaler[scaler.Length - 1];
-                        string numberPart = scaler.Substring(0, scaler.Length - 1);
-                        
-                        if (double.TryParse(numberPart, out double multiplier))
-                        {
-                            switch (lastChar)
-                            {
-                                case 'K':
-                                    value *= multiplier * 1000.0;
-                                    break;
-                                case 'M':
-                                    value *= multiplier * 1000000.0;
-                                    break;
-                                case 'B':
-                                    value *= multiplier * 1000000000.0;
-                                    break;
-                                case 'T':
-                                    value *= multiplier * 1000000000000.0;
-                                    break;
-                            }
-                        }
-                    }
-                    break;
-            }
-        }
-        
-        return value;
     }
     
     /// <summary>

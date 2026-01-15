@@ -130,13 +130,11 @@ public class InteractableObject : MonoBehaviour
         }
         
         // Находим коллайдер для расчета центра (если нужно)
+        // ВАЖНО: Ищем только на самом объекте, не в дочерних, чтобы не использовать позицию дочерних объектов
         if (useColliderCenter && interactionPoint == null)
         {
             objectCollider = GetComponent<Collider>();
-            if (objectCollider == null)
-            {
-                objectCollider = GetComponentInChildren<Collider>();
-            }
+            // НЕ ищем в дочерних объектах, чтобы избежать использования позиции дочерних мешей
         }
         
         // Используем прямую ссылку на игрока, если она назначена
@@ -352,14 +350,12 @@ public class InteractableObject : MonoBehaviour
             // Если коллайдер еще не найден, пытаемся найти его
             if (objectCollider == null)
             {
+                // ВАЖНО: Сначала ищем коллайдер на самом объекте, а не в дочерних
                 objectCollider = GetComponent<Collider>();
-                if (objectCollider == null)
-                {
-                    objectCollider = GetComponentInChildren<Collider>();
-                }
             }
             
-            if (objectCollider != null)
+            // Если коллайдер найден на самом объекте, используем его центр
+            if (objectCollider != null && objectCollider.transform == transform)
             {
                 Vector3 center = objectCollider.bounds.center;
                 // Проверяем, что центр коллайдера валиден
@@ -368,15 +364,14 @@ public class InteractableObject : MonoBehaviour
                     return center;
                 }
             }
+            // Если коллайдер НЕ найден на самом объекте, или найден в дочернем объекте,
+            // НЕ используем центр дочернего коллайдера - используем позицию самого объекта
+            // (transform.position будет использован в конце функции)
         }
         
-        // Приоритет 3: Используем позицию объекта
-        // ВАЖНО: transform.position должен быть правильным
-        Vector3 pos = transform.position;
-        
-        // Если позиция (0,0,0), это может быть нормально если объект действительно в начале координат
-        // Но если это проблема, мы можем попробовать использовать worldPositionStays
-        return pos;
+        // Приоритет 3: Используем позицию самого объекта (не дочерних)
+        // ВАЖНО: transform.position всегда возвращает мировую позицию объекта
+        return transform.position;
     }
     
     /// <summary>
@@ -545,7 +540,9 @@ public class InteractableObject : MonoBehaviour
         // Инициализируем угол кольца
         if (useRingRotation && playerTransform != null)
         {
-            Vector3 toPlayer = playerTransform.position - GetInteractionPosition();
+            // ВАЖНО: Учитываем uiOffset при вычислении направления
+            Vector3 ringCenter = GetInteractionPosition() + uiOffset;
+            Vector3 toPlayer = playerTransform.position - ringCenter;
             toPlayer.y = 0f;
             if (toPlayer.magnitude > 0.01f)
             {
@@ -661,8 +658,9 @@ public class InteractableObject : MonoBehaviour
             // и будем управлять поворотом вручную в зависимости от позиции на кольце
             if (useRingRotation)
             {
-                // Для кольца поворачиваем UI так, чтобы он смотрел на центр объекта
-                Vector3 directionToCenter = cachedInteractionPosition - uiPosition;
+                // Для кольца поворачиваем UI так, чтобы он смотрел на центр кольца (с учетом uiOffset)
+                Vector3 ringCenter = cachedInteractionPosition + uiOffset;
+                Vector3 directionToCenter = ringCenter - uiPosition;
                 directionToCenter.y = 0f; // Убираем вертикальную составляющую
                 if (directionToCenter.sqrMagnitude > 0.0001f)
                 {
@@ -1006,13 +1004,17 @@ public class InteractableObject : MonoBehaviour
             return centerPosition + uiOffset;
         }
         
+        // ВАЖНО: Центр кольца должен учитывать uiOffset
+        Vector3 ringCenter = centerPosition + uiOffset;
+        
         // Оптимизация: кэшируем вычисления направления
         Vector3 directionToPlayer = Vector3.zero;
         bool directionFound = false;
         
         if (playerTransform != null)
         {
-            Vector3 toPlayer = playerTransform.position - centerPosition;
+            // Вычисляем направление от смещенного центра кольца к игроку
+            Vector3 toPlayer = playerTransform.position - ringCenter;
             float sqrMagnitude = toPlayer.x * toPlayer.x + toPlayer.z * toPlayer.z; // Квадрат расстояния (быстрее чем magnitude)
             if (sqrMagnitude > 0.0001f) // 0.01^2
             {
@@ -1027,7 +1029,8 @@ public class InteractableObject : MonoBehaviour
         // Если игрок не найден или слишком близко, используем направление к камере
         if (!directionFound && mainCameraTransform != null)
         {
-            Vector3 toCamera = mainCameraTransform.position - centerPosition;
+            // Вычисляем направление от смещенного центра кольца к камере
+            Vector3 toCamera = mainCameraTransform.position - ringCenter;
             float sqrMagnitude = toCamera.x * toCamera.x + toCamera.z * toCamera.z;
             if (sqrMagnitude > 0.0001f)
             {
@@ -1069,11 +1072,12 @@ public class InteractableObject : MonoBehaviour
             currentRingAngle = targetRingAngle;
         }
         
-        // Вычисляем позицию на кольце (кэшируем sin/cos)
+        // Вычисляем позицию на кольце относительно смещенного центра
+        // Кольцо расположено на высоте ringHeight относительно смещенного центра
         float angleRad = currentRingAngle * Mathf.Deg2Rad;
         float sinAngle = Mathf.Sin(angleRad);
         float cosAngle = Mathf.Cos(angleRad);
-        Vector3 ringPosition = centerPosition + new Vector3(
+        Vector3 ringPosition = ringCenter + new Vector3(
             sinAngle * ringRadius,
             ringHeight,
             cosAngle * ringRadius
@@ -1108,8 +1112,9 @@ public class InteractableObject : MonoBehaviour
                 // Если используется кольцо, обновляем поворот по Y в зависимости от позиции на кольце
                 if (useRingRotation)
                 {
-                    // Вычисляем направление от UI к центру объекта
-                    Vector3 directionToCenter = cachedInteractionPosition - uiPosition;
+                    // Вычисляем направление от UI к центру кольца (с учетом uiOffset)
+                    Vector3 ringCenter = cachedInteractionPosition + uiOffset;
+                    Vector3 directionToCenter = ringCenter - uiPosition;
                     directionToCenter.y = 0f; // Убираем вертикальную составляющую
                     
                     if (directionToCenter.sqrMagnitude > 0.0001f)
@@ -1406,16 +1411,19 @@ public class InteractableObject : MonoBehaviour
         // Если используется кольцо вращения, рисуем его
         if (useRingRotation)
         {
-            // Рисуем кольцо (окружность на высоте ringHeight)
+            // ВАЖНО: Центр кольца учитывает uiOffset
+            Vector3 ringCenter = interactionPos + uiOffset;
+            
+            // Рисуем кольцо (окружность на высоте ringHeight относительно смещенного центра)
             Gizmos.color = Color.cyan;
             int segments = 32;
             float angleStep = 360f / segments;
-            Vector3 prevPoint = interactionPos + new Vector3(0, ringHeight, ringRadius);
+            Vector3 prevPoint = ringCenter + new Vector3(0, ringHeight, ringRadius);
             
             for (int i = 1; i <= segments; i++)
             {
                 float angle = i * angleStep * Mathf.Deg2Rad;
-                Vector3 currentPoint = interactionPos + new Vector3(
+                Vector3 currentPoint = ringCenter + new Vector3(
                     Mathf.Sin(angle) * ringRadius,
                     ringHeight,
                     Mathf.Cos(angle) * ringRadius
@@ -1424,20 +1432,24 @@ public class InteractableObject : MonoBehaviour
                 prevPoint = currentPoint;
             }
             
-            // Рисуем линию от центра к текущей позиции UI на кольце
+            // Рисуем линию от центра кольца к текущей позиции UI на кольце
             if (Application.isPlaying && currentUIInstance != null)
             {
                 Gizmos.color = Color.green;
-                Gizmos.DrawLine(interactionPos, currentUIInstance.transform.position);
+                Gizmos.DrawLine(ringCenter, currentUIInstance.transform.position);
             }
             else
             {
                 // В редакторе показываем примерную позицию
-                Vector3 previewPos = interactionPos + new Vector3(0, ringHeight, ringRadius);
+                Vector3 previewPos = ringCenter + new Vector3(0, ringHeight, ringRadius);
                 Gizmos.color = Color.green;
                 Gizmos.DrawWireSphere(previewPos, 0.2f);
-                Gizmos.DrawLine(interactionPos, previewPos);
+                Gizmos.DrawLine(ringCenter, previewPos);
             }
+            
+            // Рисуем центр кольца (с учетом uiOffset)
+            Gizmos.color = Color.magenta;
+            Gizmos.DrawWireSphere(ringCenter, 0.1f);
         }
         else
         {

@@ -231,12 +231,31 @@ public class WallSpawner : MonoBehaviour
     /// <summary>
     /// Вызывается компонентом WallMovement при коллизии с игроком
     /// </summary>
-    public void OnWallCollisionWithPlayer()
+    /// <param name="collidingWall">Стена, которая вызвала коллизию</param>
+    public void OnWallCollisionWithPlayer(GameObject collidingWall)
     {
         if (playerTransform == null)
         {
             Debug.LogWarning("[WallSpawner] playerTransform == null, не могу телепортировать игрока!");
             return;
+        }
+        
+        // ФИНАЛЬНАЯ ПРОВЕРКА: проверяем конкретную стену, которая вызвала коллизию
+        // Если игрок за этой стеной (Z игрока > Z стены), не телепортируем
+        if (collidingWall != null)
+        {
+            float playerZ = playerTransform.position.z;
+            float wallZ = collidingWall.transform.position.z;
+            
+            // Если игрок за стеной (Z игрока > Z стены), не телепортируем
+            if (playerZ > wallZ)
+            {
+                if (debug)
+                {
+                    Debug.LogWarning($"[WallSpawner] ФИНАЛЬНАЯ ЗАЩИТА: Игрок за стеной {collidingWall.name}! Z игрока: {playerZ:F2} > Z стены: {wallZ:F2}, телепорт ОТМЕНЁН");
+                }
+                return;
+            }
         }
         
         // Получаем CharacterController для правильной телепортации
@@ -281,6 +300,35 @@ public class WallSpawner : MonoBehaviour
                     Debug.Log("[WallSpawner] Брейнрот в руках игрока уничтожен");
                 }
             }
+        }
+        
+        // Очищаем все активные стены
+        ClearAllWalls();
+    }
+    
+    /// <summary>
+    /// Уничтожает все активные стены
+    /// </summary>
+    private void ClearAllWalls()
+    {
+        // Создаем копию списка, чтобы избежать проблем при итерации и уничтожении
+        List<GameObject> wallsToDestroy = new List<GameObject>(activeWalls);
+        
+        // Уничтожаем все стены
+        foreach (GameObject wall in wallsToDestroy)
+        {
+            if (wall != null)
+            {
+                Destroy(wall);
+            }
+        }
+        
+        // Очищаем список
+        activeWalls.Clear();
+        
+        if (debug)
+        {
+            Debug.Log($"[WallSpawner] Все активные стены уничтожены ({wallsToDestroy.Count} шт.)");
         }
     }
     

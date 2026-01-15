@@ -19,11 +19,8 @@ public class BrainrotObject : InteractableObject
     [Tooltip("Редкость объекта (всегда используйте английские значения: Common, Rare, Exclusive, Epic, Mythic, Legendary, Secret)")]
     [SerializeField] private string rarity = "Common";
     
-    [Tooltip("Доход от объекта (число)")]
-    [SerializeField] private int income = 0;
-    
-    [Tooltip("Скейлер дохода (M/B/T/K и т.д.)")]
-    [SerializeField] private string incomeScaler = "";
+    [Tooltip("Базовый доход от объекта (число, до 2000000000000000)")]
+    [SerializeField] private long baseIncome = 0;
     
     [Tooltip("Уровень объекта")]
     [SerializeField] private int level = 1;
@@ -493,66 +490,146 @@ public class BrainrotObject : InteractableObject
     }
     
     /// <summary>
-    /// Получить доход от объекта
+    /// Получить базовый доход от объекта (для обратной совместимости)
     /// </summary>
-    public int GetIncome()
+    public long GetIncome()
     {
-        return income;
+        return baseIncome;
     }
     
     /// <summary>
-    /// Получить скейлер дохода
+    /// Получить базовый доход от объекта
     /// </summary>
-    public string GetIncomeScaler()
+    public long GetBaseIncome()
     {
-        return incomeScaler;
+        return baseIncome;
     }
     
     /// <summary>
-    /// Установить доход от объекта
+    /// Установить базовый доход от объекта
     /// </summary>
-    public void SetIncome(int newIncome)
+    public void SetBaseIncome(long newBaseIncome)
     {
-        income = newIncome;
+        baseIncome = newBaseIncome;
         UpdateInfoPrefabTexts();
     }
     
     /// <summary>
-    /// Установить скейлер дохода
+    /// Установить доход от объекта (для обратной совместимости)
     /// </summary>
-    public void SetIncomeScaler(string newScaler)
+    public void SetIncome(long newIncome)
     {
-        incomeScaler = newScaler;
+        baseIncome = newIncome;
         UpdateInfoPrefabTexts();
     }
     
     /// <summary>
-    /// Установить доход и скейлер одновременно
+    /// Форматирует финальный доход в формате "число + скейлер + /S"
+    /// Использует логику из GameStorage.FormatBalance() для форматирования с скейлерами (K, M, B, T и т.д.)
     /// </summary>
-    public void SetIncome(int newIncome, string newScaler)
+    private string FormatIncome(double finalIncome)
     {
-        income = newIncome;
-        incomeScaler = newScaler;
-        UpdateInfoPrefabTexts();
-    }
-    
-    /// <summary>
-    /// Форматирует income в формате "число + scaler + /S" (без десятичных знаков, заглавная S)
-    /// </summary>
-    private string FormatIncome(int incomeValue, string scaler)
-    {
-        string result = incomeValue.ToString();
-        
-        // Добавляем скейлер, если он указан (в верхнем регистре)
-        if (!string.IsNullOrEmpty(scaler))
+        if (finalIncome <= 0)
         {
-            result += scaler.ToUpper();
+            return "0/S";
         }
         
-        // Добавляем "/S" в конец (заглавная S)
-        result += "/S";
+        string formatted = FormatIncomeValue(finalIncome);
         
-        return result;
+        // Добавляем "/S" в конец (заглавная S)
+        return formatted + "/S";
+    }
+    
+    /// <summary>
+    /// Форматирует значение дохода с использованием скейлеров (логика из GameStorage.FormatBalance)
+    /// </summary>
+    private string FormatIncomeValue(double value)
+    {
+        // Нониллионы (10^30)
+        if (value >= 1000000000000000000000000000000.0)
+        {
+            double nonillions = value / 1000000000000000000000000000000.0;
+            return FormatIncomeValueHelper(nonillions, "NO");
+        }
+        // Октиллионы (10^27)
+        else if (value >= 1000000000000000000000000000.0)
+        {
+            double octillions = value / 1000000000000000000000000000.0;
+            return FormatIncomeValueHelper(octillions, "OC");
+        }
+        // Септиллионы (10^24)
+        else if (value >= 1000000000000000000000000.0)
+        {
+            double septillions = value / 1000000000000000000000000.0;
+            return FormatIncomeValueHelper(septillions, "SP");
+        }
+        // Секстиллионы (10^21)
+        else if (value >= 1000000000000000000000.0)
+        {
+            double sextillions = value / 1000000000000000000000.0;
+            return FormatIncomeValueHelper(sextillions, "SX");
+        }
+        // Квинтиллионы (10^18)
+        else if (value >= 1000000000000000000.0)
+        {
+            double quintillions = value / 1000000000000000000.0;
+            return FormatIncomeValueHelper(quintillions, "QI");
+        }
+        // Квадриллионы (10^15)
+        else if (value >= 1000000000000000.0)
+        {
+            double quadrillions = value / 1000000000000000.0;
+            return FormatIncomeValueHelper(quadrillions, "QA");
+        }
+        // Триллионы (10^12)
+        else if (value >= 1000000000000.0)
+        {
+            double trillions = value / 1000000000000.0;
+            return FormatIncomeValueHelper(trillions, "T");
+        }
+        // Миллиарды (10^9)
+        else if (value >= 1000000000.0)
+        {
+            double billions = value / 1000000000.0;
+            return FormatIncomeValueHelper(billions, "B");
+        }
+        // Миллионы (10^6)
+        else if (value >= 1000000.0)
+        {
+            double millions = value / 1000000.0;
+            return FormatIncomeValueHelper(millions, "M");
+        }
+        // Тысячи (10^3)
+        else if (value >= 1000.0)
+        {
+            double thousands = value / 1000.0;
+            return FormatIncomeValueHelper(thousands, "K");
+        }
+        else
+        {
+            // Меньше тысячи - показываем как целое число
+            return ((long)value).ToString();
+        }
+    }
+    
+    /// <summary>
+    /// Вспомогательный метод для форматирования значения дохода с суффиксом
+    /// Целые числа отображаются без десятичных знаков
+    /// </summary>
+    private string FormatIncomeValueHelper(double value, string suffix)
+    {
+        // Проверяем, является ли число целым
+        if (value == Mathf.Floor((float)value))
+        {
+            // Целое число - без десятичных знаков
+            return $"{(long)value}{suffix}";
+        }
+        else
+        {
+            // Дробное число - с десятичными знаками (убираем лишние нули)
+            string formatted = $"{value:F2}{suffix}".TrimEnd('0').TrimEnd('.');
+            return formatted;
+        }
     }
     
     /// <summary>
@@ -875,8 +952,9 @@ public class BrainrotObject : InteractableObject
         
         if (incomeText != null)
         {
-            // Форматируем income в формате "число + scaler + /s"
-            string formattedIncome = FormatIncome(income, incomeScaler);
+            // Форматируем финальный доход в формате "число + скейлер + /S"
+            double finalIncome = GetFinalIncome();
+            string formattedIncome = FormatIncome(finalIncome);
             incomeText.text = formattedIncome;
         }
         
@@ -993,6 +1071,45 @@ public class BrainrotObject : InteractableObject
             default:
                 return Color.white; // По умолчанию белый
         }
+    }
+    
+    /// <summary>
+    /// Получить множитель редкости для расчёта дохода (12 степень)
+    /// </summary>
+    public long GetRarityMultiplier()
+    {
+        string rarityLower = rarity.ToLower();
+        
+        switch (rarityLower)
+        {
+            case "common":
+                return 1L;             // 1^12
+            case "rare":
+                return 4096L;          // 2^12
+            case "exclusive":
+                return 531441L;        // 3^12
+            case "epic":
+                return 16777216L;      // 4^12
+            case "mythic":
+                return 244140625L;     // 5^12
+            case "legendary":
+                return 2176782336L;    // 6^12
+            case "secret":
+                return 13841287201L;   // 7^12
+            default:
+                return 1L; // По умолчанию Common
+        }
+    }
+    
+    /// <summary>
+    /// Получить финальный доход с учётом редкости и уровня
+    /// Формула: baseIncome * rarityMultiplier * (1 + 1.0 * level)
+    /// </summary>
+    public double GetFinalIncome()
+    {
+        long rarityMultiplier = GetRarityMultiplier();
+        double levelMultiplier = 1.0 + 1.0 * level;
+        return baseIncome * rarityMultiplier * levelMultiplier;
     }
     
     /// <summary>

@@ -72,14 +72,15 @@ public class WallMovement : MonoBehaviour
             return;
         }
         
-        // Движемся по оси Z
-        transform.position += Vector3.back * speed * Time.deltaTime;
-        
-        // Проверяем коллизию с игроком через проверку координат
+        // ВАЖНО: Проверяем коллизию ДО движения стены, чтобы избежать ситуации,
+        // когда стена уже прошла игрока, но проверка все еще срабатывает
         if (!hasCollided && playerTransform != null)
         {
             CheckPlayerCollision();
         }
+        
+        // Движемся по оси Z (после проверки коллизии)
+        transform.position += Vector3.back * speed * Time.deltaTime;
         
         // Проверяем, достигли ли конечной позиции
         if (transform.position.z <= endPosZ)
@@ -109,6 +110,35 @@ public class WallMovement : MonoBehaviour
         Vector3 playerPos = playerTransform.position;
         Vector3 wallPos = transform.position;
         
+        // АЛЬТЕРНАТИВНЫЙ ПОДХОД 1: Строгая проверка Z С УЧЕТОМ ДВИЖЕНИЯ
+        // Стена движется назад (от большего Z к меньшему)
+        // Вычисляем, где будет стена в следующем кадре (с учетом скорости)
+        float nextWallZ = wallPos.z - (speed * Time.deltaTime);
+        
+        // Если игрок УЖЕ за текущей позицией стены - столкновения нет
+        // ИЛИ если игрок будет за следующей позицией стены - столкновения нет
+        if (playerPos.z > wallPos.z)
+        {
+            // Игрок уже за стеной (Z игрока > Z стены) - столкновения НЕТ
+            if (debugCollision)
+            {
+                Debug.Log($"[WallMovement] АЛЬТ ПОДХОД: Игрок ЗА стеной! Z игрока: {playerPos.z:F2} > Z стены: {wallPos.z:F2}, столкновение НЕ происходит");
+            }
+            return;
+        }
+        
+        // Если игрок будет за следующей позицией стены (стена его уже обгонит), тоже не считаем столкновение
+        // Но только если разница достаточно большая (стена точно пройдет мимо)
+        if (playerPos.z > nextWallZ && (playerPos.z - nextWallZ) > 0.1f)
+        {
+            // Стена пройдет мимо игрока в следующем кадре, и игрок будет за ней
+            if (debugCollision)
+            {
+                Debug.Log($"[WallMovement] АЛЬТ ПОДХОД: Стена пройдет мимо игрока! Z игрока: {playerPos.z:F2} > Следующая Z стены: {nextWallZ:F2}, столкновение НЕ происходит");
+            }
+            return;
+        }
+        
         // Проверка X: игрок должен быть в диапазоне от -42.2 до 47.2
         bool checkX = playerPos.x >= minX && playerPos.x <= maxX;
         
@@ -120,30 +150,20 @@ public class WallMovement : MonoBehaviour
             return; // Если X или Y не подходят, дальше не проверяем
         }
         
-        // Проверка Z: учитываем движение стены
-        // Стена движется назад (по отрицательному Z)
-        // Столкновение происходит только если Z игрока <= Z стены (игрок на одной линии или сзади стены)
-        // Если Z игрока > Z стены (игрок впереди стены), столкновения быть не должно
+        // Проверка Z: игрок впереди стены или на линии (playerPos.z <= wallPos.z)
+        // Проверяем, что игрок не слишком далеко впереди стены (в пределах zTolerance)
+        float zDifference = playerPos.z - wallPos.z;
         
-        float zDifference = playerPos.z - wallPos.z; // Положительное = игрок впереди стены
-        
-        // Если игрок впереди стены, столкновения не происходит
-        if (zDifference > 0)
-        {
-            if (debugCollision)
-            {
-                Debug.Log($"[WallMovement] Игрок впереди стены (Z разница: {zDifference:F2}), столкновение не происходит");
-            }
-            return;
-        }
-        
-        // Игрок на одной линии или сзади стены - проверяем, что разница в пределах допуска
-        bool checkZ = Mathf.Abs(zDifference) <= zTolerance;
+        // СТРОГАЯ проверка: игрок должен быть ВПЕРЕДИ стены (zDifference < 0, НЕ <= 0)
+        // И в пределах zTolerance
+        // Исключаем случай, когда игрок на одной линии со стеной (zDifference == 0)
+        // Столкновение только если игрок строго впереди стены на расстояние <= zTolerance
+        bool checkZ = zDifference < 0 && zDifference >= -zTolerance;
         
         if (debugCollision)
         {
-            Debug.Log($"[WallMovement] Проверка: X={checkX} ({playerPos.x:F2}), Y={checkY} ({playerPos.y:F2}), " +
-                     $"Z разница={zDifference:F2} (игрок сзади/на линии), допуск={zTolerance}, результат={checkZ}");
+            Debug.Log($"[WallMovement] Проверка Z: игрок впереди стены, разница={zDifference:F2}, допуск={zTolerance}, результат={checkZ}");
+            Debug.Log($"[WallMovement] Игрок: Z={playerPos.z:F2}, Стена: Z={wallPos.z:F2}, Следующая Z стены: {nextWallZ:F2}, X={checkX}, Y={checkY}");
         }
         
         // Если все условия выполнены, коллизия обнаружена
@@ -167,12 +187,46 @@ public class WallMovement : MonoBehaviour
             return; // Уже обработали коллизию
         }
         
+        // Дополнительная защита: проверяем Z координату еще раз перед телепортом
+        if (playerTransform != null)
+        {
+            float playerZ = playerTransform.position.z;
+            float wallZ = transform.position.z;
+            
+            // Если игрок за стеной (Z игрока > Z стены), НЕ телепортируем
+            if (playerZ > wallZ)
+            {
+                if (debugCollision)
+                {
+                    Debug.LogWarning($"[WallMovement] ЗАЩИТА: Игрок за стеной при вызове OnPlayerCollision! Z игрока: {playerZ:F2} > Z стены: {wallZ:F2}, телепорт ОТМЕНЁН");
+                }
+                return;
+            }
+        }
+        
+        // Финальная проверка перед установкой флага: еще раз проверяем Z координату
+        if (playerTransform != null)
+        {
+            float finalPlayerZ = playerTransform.position.z;
+            float finalWallZ = transform.position.z;
+            
+            // Если игрок за стеной (Z игрока > Z стены), НЕ телепортируем
+            if (finalPlayerZ > finalWallZ)
+            {
+                if (debugCollision)
+                {
+                    Debug.LogWarning($"[WallMovement] ФИНАЛЬНАЯ ЗАЩИТА: Игрок за стеной! Z игрока: {finalPlayerZ:F2} > Z стены: {finalWallZ:F2}, телепорт ОТМЕНЁН");
+                }
+                return;
+            }
+        }
+        
         hasCollided = true;
         
-        // Уведомляем спавнер о коллизии
+        // Уведомляем спавнер о коллизии, передавая ссылку на эту стену
         if (spawner != null)
         {
-            spawner.OnWallCollisionWithPlayer();
+            spawner.OnWallCollisionWithPlayer(gameObject);
         }
     }
 }
