@@ -9,7 +9,7 @@ using YG;
 /// Кнопка прыжка для мобильных устройств
 /// Отображается только на mobile/tablet устройствах
 /// </summary>
-public class JumpButton : MonoBehaviour, IPointerDownHandler, IPointerUpHandler
+public class JumpButton : MonoBehaviour, IPointerDownHandler, IPointerUpHandler, IPointerClickHandler
 {
     [Header("References")]
     [SerializeField] private Button jumpButton;
@@ -18,6 +18,10 @@ public class JumpButton : MonoBehaviour, IPointerDownHandler, IPointerUpHandler
     [Header("Settings")]
     [SerializeField] private float pressedScale = 0.9f;
     [SerializeField] private Color pressedColor = new Color(0.8f, 0.8f, 0.8f, 1f);
+    
+    [Header("Debug")]
+    [Tooltip("Показывать отладочные сообщения в консоли")]
+    [SerializeField] private bool debug = false;
     
     private ThirdPersonController playerController;
     private bool isPressed = false;
@@ -49,6 +53,21 @@ public class JumpButton : MonoBehaviour, IPointerDownHandler, IPointerUpHandler
         if (jumpButton != null)
         {
             jumpButton.onClick.AddListener(OnJumpButtonClick);
+            // Убеждаемся, что кнопка интерактивна
+            jumpButton.interactable = true;
+            
+            // Важно: Button должен иметь возможность получать события
+            // Проверяем, что transition установлен (иначе Button может не работать)
+            if (jumpButton.transition == Selectable.Transition.None && debug)
+            {
+                Debug.LogWarning("[JumpButton] Button.transition = None. Это может повлиять на обработку событий.");
+            }
+        }
+        
+        // Убеждаемся, что Image не блокирует события (RaycastTarget должен быть включен для IPointerDownHandler)
+        if (buttonImage != null)
+        {
+            buttonImage.raycastTarget = true;
         }
     }
     
@@ -62,6 +81,35 @@ public class JumpButton : MonoBehaviour, IPointerDownHandler, IPointerUpHandler
         
         // Показать/скрыть кнопку в зависимости от устройства
         UpdateButtonVisibility();
+        
+        // Дополнительная проверка: убеждаемся, что компоненты настроены правильно
+        if (jumpButton != null && !jumpButton.interactable)
+        {
+            Debug.LogWarning("[JumpButton] Кнопка не интерактивна! Включаю interactable.");
+            jumpButton.interactable = true;
+        }
+        
+        if (buttonImage != null && !buttonImage.raycastTarget)
+        {
+            Debug.LogWarning("[JumpButton] Image не принимает raycast! Включаю raycastTarget.");
+            buttonImage.raycastTarget = true;
+        }
+        
+        // Проверяем наличие EventSystem
+        if (EventSystem.current == null)
+        {
+            Debug.LogError("[JumpButton] EventSystem не найден в сцене! Кнопка не будет работать.");
+        }
+        
+        // Проверяем и выводим информацию о кнопке
+        if (debug)
+        {
+            Debug.Log($"[JumpButton] Инициализация: jumpButton={jumpButton != null}, buttonImage={buttonImage != null}, " +
+                     $"interactable={jumpButton != null && jumpButton.interactable}, " +
+                     $"raycastTarget={buttonImage != null && buttonImage.raycastTarget}, " +
+                     $"EventSystem={EventSystem.current != null}, " +
+                     $"playerController={playerController != null}");
+        }
     }
     
     private void Update()
@@ -107,12 +155,30 @@ public class JumpButton : MonoBehaviour, IPointerDownHandler, IPointerUpHandler
     
     public void OnPointerDown(PointerEventData eventData)
     {
+        // НЕ используем eventData.Use() - это может заблокировать Button.onClick
+        
+        if (debug)
+        {
+            Debug.Log($"[JumpButton] OnPointerDown вызван на объекте {gameObject.name}, позиция: {eventData.position}, activeInHierarchy: {gameObject.activeInHierarchy}, used: {eventData.used}");
+        }
+        
         isPressed = true;
         
         // Вызываем прыжок при нажатии
         if (playerController != null)
         {
             playerController.Jump();
+            if (debug)
+            {
+                Debug.Log("[JumpButton] playerController.Jump() вызван из OnPointerDown");
+            }
+        }
+        else
+        {
+            if (debug)
+            {
+                Debug.LogWarning("[JumpButton] playerController == null! Прыжок не выполнен.");
+            }
         }
         
         // Визуальная обратная связь
@@ -120,6 +186,15 @@ public class JumpButton : MonoBehaviour, IPointerDownHandler, IPointerUpHandler
         {
             buttonImage.transform.localScale = originalScale * pressedScale;
             buttonImage.color = pressedColor;
+        }
+    }
+    
+    // Тестовый метод для проверки, что кнопка получает события
+    public void OnPointerClick(PointerEventData eventData)
+    {
+        if (debug)
+        {
+            Debug.Log($"[JumpButton] OnPointerClick вызван на объекте {gameObject.name}");
         }
     }
     
@@ -137,10 +212,26 @@ public class JumpButton : MonoBehaviour, IPointerDownHandler, IPointerUpHandler
     
     private void OnJumpButtonClick()
     {
+        if (debug)
+        {
+            Debug.Log($"[JumpButton] OnJumpButtonClick вызван на объекте {gameObject.name}");
+        }
+        
         // Вызываем прыжок при клике
         if (playerController != null)
         {
             playerController.Jump();
+            if (debug)
+            {
+                Debug.Log("[JumpButton] playerController.Jump() вызван из OnJumpButtonClick");
+            }
+        }
+        else
+        {
+            if (debug)
+            {
+                Debug.LogWarning("[JumpButton] playerController == null в OnJumpButtonClick! Прыжок не выполнен.");
+            }
         }
     }
     

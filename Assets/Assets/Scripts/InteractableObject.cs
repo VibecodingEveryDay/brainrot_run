@@ -84,6 +84,7 @@ public class InteractableObject : MonoBehaviour
     protected bool isPlayerInRange = false; // protected для доступа из наследников
     private float currentHoldTime = 0f;
     private bool isHoldingKey = false;
+    private bool isMobileInteraction = false; // Флаг для определения мобильного взаимодействия
     private bool interactionCompleted = false;
     private float hideUITimer = 0f;
     
@@ -1250,9 +1251,12 @@ public class InteractableObject : MonoBehaviour
         else
         {
             // Клавиша не удерживается
-            if (isHoldingKey)
+            // ВАЖНО: НЕ сбрасываем isHoldingKey если взаимодействие происходит через мобильную кнопку
+            // Проверяем флаг isMobileInteraction - если взаимодействие мобильное,
+            // ResetProgress будет вызван из StopMobileInteraction() при отпускании кнопки
+            if (isHoldingKey && !isMobileInteraction)
             {
-                // Только что отпустили клавишу - сбрасываем прогресс
+                // Только что отпустили клавишу на PC - сбрасываем прогресс
                 ResetProgress();
             }
             
@@ -1304,6 +1308,7 @@ public class InteractableObject : MonoBehaviour
     private void ResetProgress()
     {
         isHoldingKey = false;
+        isMobileInteraction = false; // Сбрасываем флаг мобильного взаимодействия
         currentHoldTime = 0f;
         wasHoldingKeyLastFrame = false;
         lastProgressFillAmount = -1f;
@@ -1397,6 +1402,163 @@ public class InteractableObject : MonoBehaviour
     {
         interactionRange = Mathf.Max(0.1f, newRange);
         interactionRangeSqr = interactionRange * interactionRange; // Обновляем квадрат радиуса
+    }
+    
+    /// <summary>
+    /// Получает время взаимодействия (публичный геттер)
+    /// </summary>
+    public float GetInteractionTime()
+    {
+        return interactionTime;
+    }
+    
+    /// <summary>
+    /// Получает радиус взаимодействия (публичный геттер)
+    /// </summary>
+    public float GetInteractionRange()
+    {
+        return interactionRange;
+    }
+    
+    /// <summary>
+    /// Получает позицию взаимодействия (публичный метод)
+    /// </summary>
+    public Vector3 GetInteractionPositionPublic()
+    {
+        return GetInteractionPosition();
+    }
+    
+    /// <summary>
+    /// Проверяет, может ли игрок взаимодействовать с объектом (публичный метод)
+    /// </summary>
+    public bool CanInteract()
+    {
+        return isPlayerInRange && !interactionCompleted;
+    }
+    
+    /// <summary>
+    /// Начинает взаимодействие с мобильной кнопки
+    /// </summary>
+    public void StartMobileInteraction()
+    {
+        // ВАЖНО: Для переносимых объектов (BrainrotObject) не проверяем isPlayerInRange,
+        // так как объект всегда с игроком и взаимодействие должно начинаться
+        // Проверяем только interactionCompleted
+        if (interactionCompleted)
+        {
+            if (debugMode)
+            {
+                Debug.LogWarning($"[InteractableObject] {gameObject.name}: StartMobileInteraction: interactionCompleted=true, сбрасываем");
+            }
+            // Сбрасываем interactionCompleted для повторного использования
+            interactionCompleted = false;
+        }
+        
+        // Устанавливаем флаг мобильного взаимодействия
+        isMobileInteraction = true;
+        
+        if (!isHoldingKey)
+        {
+            isHoldingKey = true;
+            currentHoldTime = 0f;
+            if (debugMode)
+            {
+                Debug.Log($"[InteractableObject] {gameObject.name}: StartMobileInteraction: isHoldingKey установлен в true, currentHoldTime сброшен");
+            }
+        }
+        else if (debugMode)
+        {
+            Debug.Log($"[InteractableObject] {gameObject.name}: StartMobileInteraction: isHoldingKey уже true, currentHoldTime={currentHoldTime:F3}");
+        }
+    }
+    
+    /// <summary>
+    /// Обновляет прогресс взаимодействия с мобильной кнопки
+    /// </summary>
+    public void UpdateMobileInteraction(float deltaTime)
+    {
+        // ВАЖНО: Для переносимых объектов (BrainrotObject) не проверяем isPlayerInRange,
+        // так как объект всегда с игроком и взаимодействие должно продолжаться
+        // Проверяем только isHoldingKey и interactionCompleted
+        // НЕ проверяем interactionCompleted здесь, так как оно может быть установлено в true
+        // во время CompleteInteraction(), но нам нужно позволить завершить обновление
+        if (!isHoldingKey)
+        {
+            if (debugMode && Time.frameCount % 30 == 0)
+            {
+                Debug.Log($"[InteractableObject] {gameObject.name}: UpdateMobileInteraction: isHoldingKey=false, выход");
+            }
+            return;
+        }
+        
+        // Если взаимодействие уже завершено, не обновляем прогресс
+        // но проверяем это после проверки isHoldingKey
+        if (interactionCompleted)
+        {
+            if (debugMode && Time.frameCount % 30 == 0)
+            {
+                Debug.Log($"[InteractableObject] {gameObject.name}: UpdateMobileInteraction: interactionCompleted=true, выход");
+            }
+            return;
+        }
+        
+        // Увеличиваем время удержания
+        currentHoldTime += deltaTime;
+        
+        // Проверяем, завершено ли взаимодействие ДО ограничения
+        // Это гарантирует, что currentHoldTime точно достигнет interactionTime
+        if (currentHoldTime >= interactionTime && !interactionCompleted)
+        {
+            // Принудительно устанавливаем currentHoldTime в interactionTime для точности
+            currentHoldTime = interactionTime;
+            
+            // Устанавливаем fillAmount в 1.0 для визуального завершения
+            if (progressRingImage != null)
+            {
+                progressRingImage.fillAmount = 1.0f;
+                lastProgressFillAmount = 1.0f;
+            }
+            
+            CompleteInteraction();
+        }
+        else
+        {
+            // Ограничиваем время удержания только если взаимодействие еще не завершено
+            currentHoldTime = Mathf.Clamp(currentHoldTime, 0f, interactionTime);
+            
+            // Обновляем заполнение кольца прогресса
+            if (progressRingImage != null)
+            {
+                float fillAmount = currentHoldTime / interactionTime;
+                if (Mathf.Abs(fillAmount - lastProgressFillAmount) > 0.01f)
+                {
+                    progressRingImage.fillAmount = fillAmount;
+                    lastProgressFillAmount = fillAmount;
+                }
+            }
+        }
+    }
+    
+    /// <summary>
+    /// Останавливает взаимодействие с мобильной кнопки
+    /// </summary>
+    public void StopMobileInteraction()
+    {
+        // Сбрасываем флаг мобильного взаимодействия
+        isMobileInteraction = false;
+        
+        if (isHoldingKey)
+        {
+            ResetProgress();
+        }
+    }
+    
+    /// <summary>
+    /// Получает текущее время удержания (публичный геттер для мобильной кнопки)
+    /// </summary>
+    public float GetCurrentHoldTime()
+    {
+        return currentHoldTime;
     }
     
     // Визуализация радиуса взаимодействия в редакторе

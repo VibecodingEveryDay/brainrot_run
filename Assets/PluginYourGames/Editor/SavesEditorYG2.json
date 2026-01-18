@@ -2,12 +2,9 @@
     "balanceCount": 5,
     "balanceScaler": "QI",
     "Brainrots": [],
-    "PlayerSpeedLevel": 60,
+    "PlayerSpeedLevel": 45,
     "PurchasedSafeZones": [
-        1,
-        2,
-        4,
-        3
+        2
     ],
     "intExample": 5,
     "strExample": "Hello!",
@@ -17,5 +14,5 @@
         false,
         false
     ],
-    "idSave": 402
+    "idSave": 527
 }

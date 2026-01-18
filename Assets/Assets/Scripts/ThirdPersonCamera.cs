@@ -1,4 +1,7 @@
 using UnityEngine;
+using UnityEngine.EventSystems;
+using UnityEngine.UI;
+using TMPro;
 #if ENABLE_INPUT_SYSTEM
 using UnityEngine.InputSystem;
 #endif
@@ -22,6 +25,10 @@ public class ThirdPersonCamera : MonoBehaviour
     
     [Header("Touch Settings")]
     [SerializeField] private float touchSensitivity = 2f; // Чувствительность для touch-ввода
+    
+    [Header("Debug")]
+    [Tooltip("Показывать отладочные сообщения в консоли")]
+    [SerializeField] private bool debugCameraInput = false;
     
     [Header("Vertical Angle Limits")]
     [SerializeField] private float minVerticalAngle = -80f;
@@ -370,6 +377,14 @@ public class ThirdPersonCamera : MonoBehaviour
         // Явно указываем UnityEngine.TouchPhase для избежания конфликта с InputSystem.TouchPhase
         if (touch.phase == UnityEngine.TouchPhase.Began)
         {
+            // Проверяем, не на Canvas UI элементе ли тап (не на 3D объектах)
+            if (IsPointerOverCanvasUI(touch.position))
+            {
+                // Тап на UI элементе - игнорируем для управления камерой
+                isTouching = false;
+                return;
+            }
+            
             // Проверяем, не на джойстике ли тап
             if (IsTouchOnJoystick(touch.position))
             {
@@ -379,7 +394,7 @@ public class ThirdPersonCamera : MonoBehaviour
             }
             else
             {
-                // Тап не на джойстике - начинаем управление камерой
+                // Тап не на джойстике и не на UI - начинаем управление камерой
                 isTouching = true;
                 lastTouchPosition = touch.position;
                 return;
@@ -387,6 +402,7 @@ public class ThirdPersonCamera : MonoBehaviour
         }
         
         // Если мы уже в режиме тапа, но тап был на джойстике, сбрасываем состояние
+        // Не проверяем UI во время движения - если тап начался не на UI, продолжаем управление
         if (isTouching && IsTouchOnJoystick(touch.position))
         {
             isTouching = false;
@@ -498,9 +514,28 @@ public class ThirdPersonCamera : MonoBehaviour
         mousePosition = Input.mousePosition;
 #endif
         
-        // При начале клика проверяем, не на джойстике ли
+        // При начале клика проверяем, не на UI элементе ли (проверяем только в момент начала тапа)
         if (mouseButtonJustPressed)
         {
+            // Проверяем только Canvas UI элементы, а не все GameObjects
+            bool isOverUI = IsPointerOverCanvasUI(mousePosition);
+            
+            if (debugCameraInput)
+            {
+                Debug.Log($"[ThirdPersonCamera] mouseButtonJustPressed: mousePosition={mousePosition}, isOverUI={isOverUI}");
+            }
+            
+            if (isOverUI)
+            {
+                // Клик на UI элементе - игнорируем для управления камерой
+                if (debugCameraInput)
+                {
+                    Debug.Log("[ThirdPersonCamera] Клик на UI элементе - игнорируем для камеры");
+                }
+                isTouching = false;
+                return;
+            }
+            
             bool onJoystick = IsTouchOnJoystick(mousePosition);
             if (onJoystick)
             {
@@ -510,7 +545,7 @@ public class ThirdPersonCamera : MonoBehaviour
             }
             else
             {
-                // Клик не на джойстике - начинаем управление камерой
+                // Клик не на джойстике и не на UI - начинаем управление камерой
                 isTouching = true;
                 lastTouchPosition = mousePosition;
                 return;
@@ -518,6 +553,7 @@ public class ThirdPersonCamera : MonoBehaviour
         }
         
         // Если ЛКМ нажата, но isTouching еще не установлен (пропустили mouseButtonJustPressed)
+        // НЕ проверяем UI здесь - проверка UI была только при начале тапа, иначе можно заблокировать управление
         if (mouseButtonDown && !isTouching)
         {
             bool onJoystick = IsTouchOnJoystick(mousePosition);
@@ -529,19 +565,33 @@ public class ThirdPersonCamera : MonoBehaviour
             }
         }
         
-        // Если мы уже в режиме тапа, но клик был на джойстике, сбрасываем состояние
-        if (isTouching && mouseButtonDown && IsTouchOnJoystick(mousePosition))
-        {
-            isTouching = false;
-            return;
-        }
-        
-        // Обрабатываем движение мыши при зажатой кнопке (только если не на джойстике)
+        // Если мы уже в режиме тапа, проверяем, не переместилась ли мышь на UI или джойстик
+        // Если тап начался на UI/джойстике, сразу сбрасываем состояние
         if (isTouching && mouseButtonDown)
         {
-            // Проверяем, не на джойстике ли текущая позиция
+            // Проверяем UI (если тап переместился на UI элемент)
+            bool isOverUI = IsPointerOverCanvasUI(mousePosition);
             bool onJoystick = IsTouchOnJoystick(mousePosition);
-            if (!onJoystick)
+            
+            if (isOverUI || onJoystick)
+            {
+                if (debugCameraInput)
+                {
+                    Debug.Log($"[ThirdPersonCamera] Тап переместился на UI/джойстик, сбрасываем управление камерой. isOverUI={isOverUI}, onJoystick={onJoystick}");
+                }
+                isTouching = false;
+                return;
+            }
+        }
+        
+        // Обрабатываем движение мыши при зажатой кнопке (только если не на джойстике и не на UI)
+        if (isTouching && mouseButtonDown)
+        {
+            // Проверяем, не на джойстике или UI ли текущая позиция
+            bool onJoystick = IsTouchOnJoystick(mousePosition);
+            bool isOverUI = IsPointerOverCanvasUI(mousePosition);
+            
+            if (!onJoystick && !isOverUI)
             {
                 Vector2 mouseDelta = mousePosition - lastTouchPosition;
                 
@@ -586,6 +636,84 @@ public class ThirdPersonCamera : MonoBehaviour
         if (joystickManager == null) return false;
         
         return joystickManager.IsPointOnJoystick(screenPosition);
+    }
+    
+    /// <summary>
+    /// Проверяет, находится ли указатель над Canvas UI элементом (не 3D объектами)
+    /// Фильтрует только интерактивные UI элементы (Button, Selectable и т.д.), игнорируя фоновые Canvas элементы
+    /// </summary>
+    private bool IsPointerOverCanvasUI(Vector2 screenPosition)
+    {
+        if (EventSystem.current == null) return false;
+        
+        // Используем EventSystem.RaycastAll для проверки UI элементов
+        PointerEventData pointerEventData = new PointerEventData(EventSystem.current);
+        pointerEventData.position = screenPosition;
+        
+        var results = new System.Collections.Generic.List<RaycastResult>();
+        EventSystem.current.RaycastAll(pointerEventData, results);
+        
+        // Фильтруем результаты - проверяем только интерактивные UI элементы из GraphicRaycaster
+        // Игнорируем контейнеры MobileUIContainer и OverflowUiContainer, но учитываем их дочерние элементы
+        foreach (var result in results)
+        {
+            // Проверяем, что это UI элемент Canvas (GraphicRaycaster)
+            if (result.module is GraphicRaycaster)
+            {
+                GameObject hitObject = result.gameObject;
+                
+                // Пропускаем контейнеры MobileUIContainer и OverflowUiContainer
+                if (hitObject.name == "MobileUIContainer" || hitObject.name == "OverflowUiContainer")
+                {
+                    if (debugCameraInput)
+                    {
+                        Debug.Log($"[ThirdPersonCamera] IsPointerOverCanvasUI: пропускаем контейнер: {hitObject.name}");
+                    }
+                    continue; // Пропускаем контейнер и проверяем следующие элементы
+                }
+                
+                // Проверяем, является ли элемент интерактивным (Button, Selectable, IPointerDownHandler и т.д.)
+                // Игнорируем фоновые Canvas элементы, которые не должны блокировать клики
+                bool isInteractive = 
+                    hitObject.GetComponent<Selectable>() != null ||
+                    hitObject.GetComponent<Button>() != null ||
+                    hitObject.GetComponent<IPointerClickHandler>() != null ||
+                    hitObject.GetComponent<IPointerDownHandler>() != null ||
+                    hitObject.GetComponent<Toggle>() != null ||
+                    hitObject.GetComponent<Slider>() != null ||
+                    hitObject.GetComponent<Scrollbar>() != null ||
+                    hitObject.GetComponent<Dropdown>() != null ||
+                    hitObject.GetComponent<InputField>() != null ||
+                    hitObject.GetComponent<TMP_InputField>() != null;
+                
+                // Также проверяем, имеет ли Image raycastTarget (интерактивный элемент)
+                Image image = hitObject.GetComponent<Image>();
+                if (image != null && image.raycastTarget)
+                {
+                    isInteractive = true;
+                }
+                
+                if (isInteractive)
+                {
+                    if (debugCameraInput)
+                    {
+                        Debug.Log($"[ThirdPersonCamera] IsPointerOverCanvasUI: найдено интерактивное UI: {hitObject.name}");
+                    }
+                    return true;
+                }
+                else if (debugCameraInput)
+                {
+                    Debug.Log($"[ThirdPersonCamera] IsPointerOverCanvasUI: UI элемент найден, но не интерактивный: {hitObject.name} (игнорируем)");
+                }
+            }
+        }
+        
+        if (debugCameraInput)
+        {
+            Debug.Log($"[ThirdPersonCamera] IsPointerOverCanvasUI: интерактивные UI элементы не найдены, results.Count={results.Count}");
+        }
+        
+        return false;
     }
     
     /// <summary>
