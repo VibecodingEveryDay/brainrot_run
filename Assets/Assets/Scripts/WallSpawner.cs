@@ -191,7 +191,7 @@ public class WallSpawner : MonoBehaviour
         
         float playerZ = playerTransform.position.z;
         
-        if (playerZ < 50f)
+        if (playerZ < 250f)
         {
             // Если игрок на Z < 50, используем 5/8 от заданного значения
             return startPosZ * (5f / 8f);
@@ -336,6 +336,30 @@ public class WallSpawner : MonoBehaviour
         
         // Очищаем все активные стены
         ClearAllWalls();
+        
+        // Респавним брейнроты на всех ZoneSpawner
+        RespawnAllZoneSpawners();
+    }
+    
+    /// <summary>
+    /// Респавнит брейнроты на всех ZoneSpawner в сцене
+    /// </summary>
+    private void RespawnAllZoneSpawners()
+    {
+        ZoneSpawner[] allZoneSpawners = FindObjectsByType<ZoneSpawner>(FindObjectsSortMode.None);
+        
+        foreach (ZoneSpawner zoneSpawner in allZoneSpawners)
+        {
+            if (zoneSpawner != null)
+            {
+                zoneSpawner.RespawnBrainrots();
+            }
+        }
+        
+        if (debug)
+        {
+            Debug.Log($"[WallSpawner] Респавнены брейнроты на {allZoneSpawners.Length} ZoneSpawner");
+        }
     }
     
     /// <summary>

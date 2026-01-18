@@ -1109,17 +1109,17 @@ public class BrainrotObject : InteractableObject
             case "common":
                 return 1L;             // 1^12
             case "rare":
-                return 100L;          // 2^12
+                return 5L;          // 2^12
             case "exclusive":
-                return 10000L;        // 3^12
+                return 10L;        // 3^12
             case "epic":
-                return 16777216L;      // 4^12
+                return 50L;      // 4^12
             case "mythic":
-                return 244140625L;     // 5^12
+                return 200L;     // 5^12
             case "legendary":
-                return 2176782336L;    // 6^12
+                return 1000L;    // 6^12
             case "secret":
-                return 13841287201L;   // 7^12
+                return 10000L;   // 7^12
             default:
                 return 1L; // По умолчанию Common
         }

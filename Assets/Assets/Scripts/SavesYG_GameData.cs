@@ -22,5 +22,15 @@ namespace YG
         /// Список всех Brainrot объектов игрока
         /// </summary>
         public List<BrainrotData> Brainrots = new List<BrainrotData>();
+        
+        /// <summary>
+        /// Уровень скорости игрока (начальный уровень 10)
+        /// </summary>
+        public int PlayerSpeedLevel = 10;
+        
+        /// <summary>
+        /// Список номеров купленных безопасных зон (1-4)
+        /// </summary>
+        public List<int> PurchasedSafeZones = new List<int>();
     }
 }

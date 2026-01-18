@@ -8,6 +8,13 @@ using YG;
 /// </summary>
 public class GameStorage : MonoBehaviour
 {
+    [Header("Dev Mode Settings")]
+    [Tooltip("Режим разработчика - устанавливает стартовый баланс при старте")]
+    [SerializeField] private bool devMode = false;
+    
+    [Tooltip("Стартовый баланс для режима разработчика")]
+    [SerializeField] private long startBalance = 1000000;
+    
     private static GameStorage _instance;
     
     public static GameStorage Instance
@@ -68,6 +75,12 @@ public class GameStorage : MonoBehaviour
     {
         // Данные автоматически загружаются из YG2.saves
         // Этот метод вызывается при загрузке сохранений
+        
+        // Если включен DevMode, применяем стартовый баланс после загрузки данных
+        if (devMode)
+        {
+            ApplyDevModeBalance();
+        }
     }
     
     #region Balance Methods
@@ -592,6 +605,138 @@ public class GameStorage : MonoBehaviour
     
     #endregion
     
+    #region Speed Methods
+    
+    /// <summary>
+    /// Получить текущий уровень скорости игрока
+    /// </summary>
+    public int GetPlayerSpeedLevel()
+    {
+        return YG2.saves.PlayerSpeedLevel;
+    }
+    
+    /// <summary>
+    /// Установить уровень скорости игрока
+    /// </summary>
+    public void SetPlayerSpeedLevel(int level)
+    {
+        YG2.saves.PlayerSpeedLevel = level;
+    }
+    
+    /// <summary>
+    /// Увеличить уровень скорости игрока
+    /// </summary>
+    public void IncreasePlayerSpeedLevel(int amount = 1)
+    {
+        YG2.saves.PlayerSpeedLevel += amount;
+    }
+    
+    #endregion
+    
+    #region SafeZones Methods
+    
+    /// <summary>
+    /// Проверить, куплена ли безопасная зона
+    /// </summary>
+    public bool IsSafeZonePurchased(int zoneNumber)
+    {
+        return YG2.saves.PurchasedSafeZones.Contains(zoneNumber);
+    }
+    
+    /// <summary>
+    /// Купить безопасную зону
+    /// </summary>
+    public bool PurchaseSafeZone(int zoneNumber)
+    {
+        if (zoneNumber < 1 || zoneNumber > 4)
+        {
+            Debug.LogError($"[GameStorage] Некорректный номер зоны: {zoneNumber}. Допустимые значения: 1-4");
+            return false;
+        }
+        
+        if (!YG2.saves.PurchasedSafeZones.Contains(zoneNumber))
+        {
+            YG2.saves.PurchasedSafeZones.Add(zoneNumber);
+            return true;
+        }
+        
+        return false; // Зона уже куплена
+    }
+    
+    /// <summary>
+    /// Получить список купленных безопасных зон
+    /// </summary>
+    public List<int> GetPurchasedSafeZones()
+    {
+        return new List<int>(YG2.saves.PurchasedSafeZones);
+    }
+    
+    #endregion
+    
+    /// <summary>
+    /// Отложенное применение стартового баланса в режиме разработчика
+    /// Ожидает инициализацию YG2 перед сохранением
+    /// </summary>
+    private System.Collections.IEnumerator ApplyDevModeBalanceDelayed()
+    {
+        // Ждем несколько кадров, чтобы YG2 успел инициализироваться
+        yield return new WaitForEndOfFrame();
+        yield return new WaitForEndOfFrame();
+        
+        ApplyDevModeBalance();
+    }
+    
+    /// <summary>
+    /// Применить стартовый баланс в режиме разработчика
+    /// </summary>
+    private void ApplyDevModeBalance()
+    {
+        if (devMode && startBalance > 0)
+        {
+            // Конвертируем long в value + scaler и устанавливаем стартовый баланс
+            (int value, string scaler) = ConvertDoubleToBalance((double)startBalance);
+            SetBalance(value, scaler);
+            
+            // Сохраняем изменения только если YG2 инициализирован
+            if (YG2.isSDKEnabled)
+            {
+                Save();
+                Debug.Log($"[GameStorage] DevMode: установлен стартовый баланс {startBalance}");
+            }
+            else
+            {
+                // Если YG2 еще не инициализирован, откладываем сохранение
+                StartCoroutine(DelayedSave());
+            }
+        }
+    }
+    
+    /// <summary>
+    /// Отложенное сохранение для случаев, когда YG2 еще не инициализирован
+    /// </summary>
+    private System.Collections.IEnumerator DelayedSave()
+    {
+        // Ждем до момента, когда YG2 будет инициализирован
+        float waitTime = 0f;
+        float maxWaitTime = 2f; // Максимальное время ожидания (2 секунды)
+        
+        while (waitTime < maxWaitTime)
+        {
+            yield return new WaitForSeconds(0.1f);
+            waitTime += 0.1f;
+            
+            // Проверяем, инициализирован ли YG2
+            if (YG2.isSDKEnabled)
+            {
+                Save();
+                Debug.Log($"[GameStorage] DevMode: установлен стартовый баланс {startBalance} (после ожидания {waitTime:F1}с)");
+                yield break;
+            }
+        }
+        
+        Debug.LogWarning("[GameStorage] DevMode: не удалось сохранить стартовый баланс - YG2 не инициализирован за отведенное время");
+    }
+    
     #region Save Methods
     
     /// <summary>
@@ -603,7 +748,7 @@ public class GameStorage : MonoBehaviour
     }
     
     /// <summary>
-    /// Очистить все данные storage (баланс и все Brainrot объекты)
+    /// Очистить все данные storage (баланс, все Brainrot объекты и уровень скорости)
     /// Можно вызвать из инспектора
     /// </summary>
     [ContextMenu("Clear Storage")]
@@ -616,10 +761,26 @@ public class GameStorage : MonoBehaviour
         // Очищаем все Brainrot объекты
         YG2.saves.Brainrots.Clear();
         
+        // Сбрасываем уровень скорости к значению по умолчанию
+        YG2.saves.PlayerSpeedLevel = 0;
+        
+        // Очищаем список купленных безопасных зон
+        YG2.saves.PurchasedSafeZones.Clear();
+        
         // Сохраняем изменения
         YG2.SaveProgress();
         
-        Debug.Log("[GameStorage] Storage очищен: баланс и все Brainrot объекты удалены");
+        // Обновляем все SafeZone объекты в сцене, чтобы они снова активировали Collider
+        SafeZone[] allSafeZones = FindObjectsByType<SafeZone>(FindObjectsSortMode.None);
+        foreach (SafeZone safeZone in allSafeZones)
+        {
+            if (safeZone != null)
+            {
+                safeZone.UpdatePurchaseStatus();
+            }
+        }
+        
+        Debug.Log("[GameStorage] Storage очищен: баланс, все Brainrot объекты, уровень скорости и купленные безопасные зоны сброшены");
     }
     
     /// <summary>

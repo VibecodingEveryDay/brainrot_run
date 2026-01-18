@@ -7,10 +7,21 @@ using UnityEngine.InputSystem;
 public class ThirdPersonController : MonoBehaviour
 {
     [Header("Movement Settings")]
-    [SerializeField] private float moveSpeed = 5f;
+    [SerializeField] private float baseMoveSpeed = 5f; // Базовая скорость при уровне 0
+    [SerializeField] private float speedLevelScaler = 1f; // Множитель для расчета скорости на основе уровня
     [SerializeField] private float jumpForce = 8f;
     [SerializeField] private float rotationSpeed = 10f;
     [SerializeField] private float gravity = -9.81f;
+    
+    [Header("Speed Level Settings")]
+    [Tooltip("Использовать уровень скорости из GameStorage (если true, moveSpeed будет вычисляться на основе уровня)")]
+    [SerializeField] private bool useSpeedLevel = true;
+    
+    [Header("Debug")]
+    [Tooltip("Показывать отладочные сообщения о скорости")]
+    [SerializeField] private bool debugSpeed = false;
+    
+    private float moveSpeed; // Вычисляемая скорость (может изменяться на основе уровня)
     
     [Header("References")]
     [SerializeField] private Transform modelTransform; // Дочерний объект с моделью
@@ -39,6 +50,9 @@ public class ThirdPersonController : MonoBehaviour
     
     // Ввод от джойстика (для мобильных устройств)
     private Vector2 joystickInput = Vector2.zero;
+    
+    // GameStorage для получения уровня скорости
+    private GameStorage gameStorage;
     
     // Параметры аниматора
     private static readonly int SpeedHash = Animator.StringToHash("Speed");
@@ -78,6 +92,44 @@ public class ThirdPersonController : MonoBehaviour
         if (cameraController == null)
         {
             cameraController = FindFirstObjectByType<ThirdPersonCamera>();
+        }
+        
+        // Инициализируем скорость на основе базовой скорости
+        if (!useSpeedLevel)
+        {
+            moveSpeed = baseMoveSpeed;
+        }
+    }
+    
+    private void Start()
+    {
+        // Получаем ссылку на GameStorage
+        gameStorage = GameStorage.Instance;
+        
+        // Обновляем скорость на основе уровня при старте
+        if (useSpeedLevel && gameStorage != null)
+        {
+            UpdateSpeedFromLevel();
+        }
+        else if (!useSpeedLevel)
+        {
+            moveSpeed = baseMoveSpeed;
+        }
+    }
+    
+    private void OnEnable()
+    {
+        // Обновляем скорость при включении объекта (на случай если GameStorage был инициализирован после Start)
+        if (useSpeedLevel)
+        {
+            if (gameStorage == null)
+            {
+                gameStorage = GameStorage.Instance;
+            }
+            if (gameStorage != null)
+            {
+                UpdateSpeedFromLevel();
+            }
         }
     }
     
@@ -382,5 +434,85 @@ public class ThirdPersonController : MonoBehaviour
     public void SetJoystickInput(Vector2 input)
     {
         joystickInput = input;
+    }
+    
+    /// <summary>
+    /// Обновляет скорость на основе уровня из GameStorage
+    /// </summary>
+    private void UpdateSpeedFromLevel()
+    {
+        if (!useSpeedLevel)
+        {
+            moveSpeed = baseMoveSpeed;
+            return;
+        }
+        
+        // Если GameStorage еще не инициализирован, пытаемся получить его
+        if (gameStorage == null)
+        {
+            gameStorage = GameStorage.Instance;
+        }
+        
+        if (gameStorage == null)
+        {
+            moveSpeed = baseMoveSpeed;
+            return;
+        }
+        
+        int speedLevel = gameStorage.GetPlayerSpeedLevel();
+        moveSpeed = baseMoveSpeed + (speedLevel * speedLevelScaler);
+        
+        if (debugSpeed)
+        {
+            Debug.Log($"[ThirdPersonController] Скорость обновлена: baseMoveSpeed={baseMoveSpeed}, speedLevel={speedLevel}, speedLevelScaler={speedLevelScaler}, moveSpeed={moveSpeed}");
+        }
+    }
+    
+    /// <summary>
+    /// Установить скорость движения вручную (вызывается из ShopSpeedManager)
+    /// </summary>
+    public void SetMoveSpeed(float newSpeed)
+    {
+        moveSpeed = newSpeed;
+    }
+    
+    /// <summary>
+    /// Получить текущую скорость движения
+    /// </summary>
+    public float GetMoveSpeed()
+    {
+        return moveSpeed;
+    }
+    
+    /// <summary>
+    /// Принудительно обновить скорость на основе уровня (можно вызвать из ShopSpeedManager после покупки)
+    /// </summary>
+    public void RefreshSpeedFromLevel()
+    {
+        UpdateSpeedFromLevel();
+    }
+    
+    /// <summary>
+    /// Получить базовую скорость движения
+    /// </summary>
+    public float GetBaseMoveSpeed()
+    {
+        return baseMoveSpeed;
+    }
+    
+    /// <summary>
+    /// Получить множитель уровня скорости
+    /// </summary>
+    public float GetSpeedLevelScaler()
+    {
+        return speedLevelScaler;
+    }
+    
+    /// <summary>
+    /// Вычислить скорость на основе уровня (для отображения в UI)
+    /// </summary>
+    public float CalculateSpeedFromLevel(int level)
+    {
+        return baseMoveSpeed + (level * speedLevelScaler);
     }
 }
